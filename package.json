@@ -29,7 +29,7 @@
 		"unlink-workspace-packages": "tsx scripts/link-packages.ts --unlink"
 	},
 	"devDependencies": {
-		"@changesets/cli": "^2.27.10",
+		"@changesets/cli": "^2.29.6",
 		"@dotenvx/dotenvx": "^1.34.0",
 		"@roo-code/config-typescript": "workspace:^",
 		"@types/glob": "^9.0.0",
