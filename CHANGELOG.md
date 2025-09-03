@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.26.5
+
+### Patch Changes
+
+- ![3.26.5 Release - Enhanced AI Thinking Capabilities](/releases/3.26.5-release.png)
+
 ## [3.26.4] - 2025-09-01
 
 ![3.26.4 Release - Memory Optimization](/releases/3.26.4-release.png)
