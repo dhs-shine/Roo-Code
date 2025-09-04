@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.26.6
+
+### Patch Changes
+
+- ![3.26.6 Release - Bug Fixes and Tool Improvements](/releases/3.26.6-release.png)
+
 ## [3.26.5] - 2025-09-03
 
 ![3.26.5 Release - Enhanced AI Thinking Capabilities](/releases/3.26.5-release.png)
