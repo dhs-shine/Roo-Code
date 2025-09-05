@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.26.7
+
+### Patch Changes
+
+- ![3.26.7 Release - OpenAI Service Tiers](/releases/3.26.7-release.png)
+
 ## [3.26.6] - 2025-09-03
 
 ![3.26.6 Release - Bug Fixes and Tool Improvements](/releases/3.26.6-release.png)
