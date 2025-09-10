@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.0
+
+### Minor Changes
+
+- ![3.28.0 Release - Click-to-edit chat messages and UI improvements](/releases/3.28.0-release.png)
+
 ## [3.27.0] - 2025-09-05
 
 ![3.27.0 Release - Bug Fixes and Improvements](/releases/3.27.0-release.png)
