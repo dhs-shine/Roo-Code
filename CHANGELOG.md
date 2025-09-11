@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.1
+
+### Patch Changes
+
+- ![3.28.1 Release - Kangaroo riding rocket to the clouds](/releases/3.28.1-release.png)
+
 ## [3.28.0] - 2025-09-10
 
 ![3.28.0 Release - Continue tasks in Roo Code Cloud](/releases/3.28.0-release.png)
