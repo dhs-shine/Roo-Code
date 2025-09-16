@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.3
+
+### Patch Changes
+
+- ![3.28.3 Release - UI/UX Improvements and Bug Fixes](/releases/3.28.3-release.png)
+
 ## [3.28.2] - 2025-09-14
 
 ![3.28.2 Release - Auto-approve improvements](/releases/3.28.2-release.png)
