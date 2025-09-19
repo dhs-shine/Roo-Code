@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.4
+
+### Patch Changes
+
+- ![3.28.4 Release - Supernova Discovery](/releases/3.28.4-release.png)
+
 ## [3.28.3] - 2025-09-16
 
 ![3.28.3 Release - UI/UX Improvements and Bug Fixes](/releases/3.28.3-release.png)
