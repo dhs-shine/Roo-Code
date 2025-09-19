@@ -1,10 +1,14 @@
 # Roo Code Changelog
 
-## 3.28.4
+## [3.28.4] - 2025-09-19
 
-### Patch Changes
+![3.28.4 Release - Supernova Discovery](/releases/3.28.4-release.png)
 
-- ![3.28.4 Release - Supernova Discovery](/releases/3.28.4-release.png)
+- UX: Redesigned Message Feed (thanks @brunobergher!)
+- UX: Responsive Auto-Approve (thanks @brunobergher!)
+- Add telemetry retry queue for network resilience (thanks @daniel-lxs!)
+- Fix: Transform keybindings in nightly build to fix command+y shortcut (thanks @app/roomote!)
+- New code-supernova stealth model in the Roo Code Cloud provider (thanks @mrubens!)
 
 ## [3.28.3] - 2025-09-16
 
