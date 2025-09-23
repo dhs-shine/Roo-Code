@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.6
+
+### Patch Changes
+
+- ![3.28.6 Release - Kangaroo studying ancient codex](/releases/3.28.6-release.png)
+
 ## 3.28.5
 
 ### Patch Changes
