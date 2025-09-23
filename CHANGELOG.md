@@ -4,15 +4,15 @@
 
 ![3.28.6 Release - Kangaroo studying ancient codex](/releases/3.28.6-release.png)
 
-- feat(types): add GPT-5-Codex model (thanks @daniel-lxs!)
-- feat: Add keyboard shortcut for toggling auto-approve (Cmd/Ctrl+Alt+A) (thanks @brunobergher!)
+- Feat: Add GPT-5-Codex model (thanks @daniel-lxs!)
+- Feat: Add keyboard shortcut for toggling auto-approve (Cmd/Ctrl+Alt+A) (thanks @brunobergher!)
 - Fix: Improve reasoning block formatting for better readability (thanks @daniel-lxs!)
-- Fix: respect Ollama Modelfile num_ctx configuration (#7797 by @hannesrudolph, PR by @app/roomote)
-- Fix: prevent checkpoint text from wrapping in non-English languages (#8206 by @NaccOll, PR by @app/roomote)
+- Fix: Respect Ollama Modelfile num_ctx configuration (#7797 by @hannesrudolph, PR by @app/roomote)
+- Fix: Prevent checkpoint text from wrapping in non-English languages (#8206 by @NaccOll, PR by @app/roomote)
 - Remove language selection and word wrap toggle from CodeBlock (thanks @mrubens!)
-- feat: add package.nls.json checking to find-missing-translations script (thanks @app/roomote!)
-- Fix: bare metal evals fixes (thanks @cte!)
-- Fix: follow-up questions should trigger the "interactive" state (thanks @cte!)
+- Feat: Add package.nls.json checking to find-missing-translations script (thanks @app/roomote!)
+- Fix: Bare metal evals fixes (thanks @cte!)
+- Fix: Follow-up questions should trigger the "interactive" state (thanks @cte!)
 
 ## [3.28.5] - 2025-09-20
 
