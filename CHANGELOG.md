@@ -1,16 +1,28 @@
 # Roo Code Changelog
 
-## 3.28.6
+## [3.28.6] - 2025-09-23
 
-### Patch Changes
+![3.28.6 Release - Kangaroo studying ancient codex](/releases/3.28.6-release.png)
 
-- ![3.28.6 Release - Kangaroo studying ancient codex](/releases/3.28.6-release.png)
+- feat(types): add GPT-5-Codex model (thanks @daniel-lxs!)
+- feat: Add keyboard shortcut for toggling auto-approve (Cmd/Ctrl+Alt+A) (thanks @brunobergher!)
+- Fix: Improve reasoning block formatting for better readability (thanks @daniel-lxs!)
+- Fix: respect Ollama Modelfile num_ctx configuration (#7797 by @hannesrudolph, PR by @app/roomote)
+- Fix: prevent checkpoint text from wrapping in non-English languages (#8206 by @NaccOll, PR by @app/roomote)
+- Remove language selection and word wrap toggle from CodeBlock (thanks @mrubens!)
+- feat: add package.nls.json checking to find-missing-translations script (thanks @app/roomote!)
+- Fix: bare metal evals fixes (thanks @cte!)
+- Fix: follow-up questions should trigger the "interactive" state (thanks @cte!)
 
-## 3.28.5
+## [3.28.5] - 2025-09-20
 
-### Patch Changes
-
--   - Add an announcement for Supernova (thanks @mrubens!)
+- Add an announcement for Supernova (thanks @mrubens!)
+- Wrap code blocks by default for improved readability (thanks @mrubens!)
+- Fix: Resolve duplicate rehydrate during reasoning; centralize rehydrate and preserve cancel metadata (#8153 by @hannesrudolph, PR by @hannesrudolph)
+- Fix: Support dash prefix in parseMarkdownChecklist for todo lists (#8054 by @NaccOll, PR by app/roomote)
+- Fix: Apply tiered pricing for Gemini models via Vertex AI (#8017 by @ikumi3, PR by app/roomote)
+- Update SambaNova models to latest versions (thanks @snova-jorgep!)
+- Update privacy policy to allow occasional emails (thanks @jdilla1277!)
 
 ## [3.28.4] - 2025-09-19
 
