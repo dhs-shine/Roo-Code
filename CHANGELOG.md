@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.8
+
+### Patch Changes
+
+- ![3.28.8 Release - Bug fixes and improvements](/releases/3.28.8-release.png)
+
 ## [3.28.7] - 2025-09-23
 
 ![3.28.7 Release - Hidden Thinking](/releases/3.28.7-release.png)
