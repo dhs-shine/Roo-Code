@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.9
+
+### Patch Changes
+
+- ![3.28.9 Release - Supernova Upgrade](/releases/3.28.9-release.png)
+
 ## [3.28.8] - 2025-09-25
 
 ![3.28.8 Release - Bug fixes and improvements](/releases/3.28.8-release.png)
