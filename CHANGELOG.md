@@ -1,10 +1,8 @@
 # Roo Code Changelog
 
-## 3.28.12
+## [3.28.12] - 2025-09-29
 
-### Patch Changes
-
--   - Fix: Correct Anthropic Sonnet 4.5 model ID and add Bedrock 1M context checkbox (thanks @daniel-lxs!)
+- Fix: Correct Anthropic Sonnet 4.5 model ID and add Bedrock 1M context checkbox (thanks @daniel-lxs!)
 
 ## [3.28.11] - 2025-09-29
 
