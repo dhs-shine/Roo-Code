@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.10
+
+### Patch Changes
+
+- ![3.28.10 Release - Kangaroo Writing Sonnet 4.5](/releases/3.28.10-release.png)
+
 ## [3.28.9] - 2025-09-26
 
 ![3.28.9 Release - Supernova Upgrade](/releases/3.28.9-release.png)
