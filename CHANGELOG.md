@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.14
+
+### Patch Changes
+
+- ![3.28.14 Release - GLM-4.6 Model Support](/releases/3.28.14-release.png)
+
 ## [3.28.13] - 2025-09-29
 
 - Fix: Remove topP parameter from Bedrock inference config (#8377 by @ronyblum, PR by @daniel-lxs)
