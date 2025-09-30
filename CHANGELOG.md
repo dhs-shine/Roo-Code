@@ -1,10 +1,10 @@
 # Roo Code Changelog
 
-## 3.28.14
+## [3.28.14] - 2025-09-30
 
-### Patch Changes
+![3.28.14 Release - GLM-4.6 Model Support](/releases/3.28.14-release.png)
 
-- ![3.28.14 Release - GLM-4.6 Model Support](/releases/3.28.14-release.png)
+- Add support for GLM-4.6 model for z.ai provider (#8406 by @dmarkey, PR by @roomote)
 
 ## [3.28.13] - 2025-09-29
 
