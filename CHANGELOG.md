@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.28.18
+
+### Patch Changes
+
+-   - Fix: Remove request content from UI messages to improve performance and reduce clutter (#5601 by @MuriloFP, #8594 by @multivac2x, #8690 by @hannesrudolph, PR by @mrubens)
+
 ## [3.28.17] - 2025-10-15
 
 - Add support for Claude Haiku 4.5 model (thanks @daniel-lxs!)
