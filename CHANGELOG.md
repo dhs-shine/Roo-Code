@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.29.0
+
+### Minor Changes
+
+- ![3.29.0 Release - Intelligent File Reading](/releases/3.29.0-release.png)
+
 ## [3.28.18] - 2025-10-17
 
 - Fix: Remove request content from UI messages to improve performance and reduce clutter (#5601 by @MuriloFP, #8594 by @multivac2x, #8690 by @hannesrudolph, PR by @mrubens)
