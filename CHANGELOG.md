@@ -1,10 +1,12 @@
 # Roo Code Changelog
 
-## 3.29.1
+## [3.29.1] - 2025-10-26
 
-### Patch Changes
+![3.29.1 Release - Window Cleaning](/releases/3.29.1-release.png)
 
-- ![3.29.1 Release - Window Cleaning](/releases/3.29.1-release.png)
+- Fix: Clean up max output token calculations to prevent context window overruns (#8821 by @enerage, PR by @roomote)
+- Fix: Change Add to Context keybinding to avoid Redo conflict (#8652 by @swythan, PR by @roomote)
+- Fix provider model loading race conditions (thanks @mrubens!)
 
 ## [3.29.0] - 2025-10-24
 
