@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.29.2
+
+### Patch Changes
+
+-   - Add support for LongCat-Flash-Thinking-FP8 models in Chutes AI provider (#8425 by @leakless21, PR by @roomote)
+
 ## [3.29.1] - 2025-10-26
 
 ![3.29.1 Release - Window Cleaning](/releases/3.29.1-release.png)
