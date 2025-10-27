@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.29.1
+
+### Patch Changes
+
+- ![3.29.1 Release - Window Cleaning](/releases/3.29.1-release.png)
+
 ## [3.29.0] - 2025-10-24
 
 ![3.29.0 Release - Intelligent File Reading](/releases/3.29.0-release.png)
