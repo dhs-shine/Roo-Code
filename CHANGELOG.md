@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.29.3
+
+### Patch Changes
+
+-   - Update Gemini models with latest 09-2025 versions including Gemini 2.5 Pro and Flash (#8485 by @cleacos, PR by @roomote)
+
 ## [3.29.2] - 2025-10-27
 
 - Add support for LongCat-Flash-Thinking-FP8 models in Chutes AI provider (#8425 by @leakless21, PR by @roomote)
