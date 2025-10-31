@@ -1,5 +1,12 @@
 # Roo Code Changelog
 
+## 3.29.4
+
+### Patch Changes
+
+-   - Add Minimax Provider support (thanks @Maosghoul!)
+-   - Fix: prevent infinite loop when canceling during auto-retry (#8901 by @mini2s, PR by @app/roomote)
+
 ## [3.29.3] - 2025-10-28
 
 - Update Gemini models with latest 09-2025 versions including Gemini 2.5 Pro and Flash (#8485 by @cleacos, PR by @roomote)
