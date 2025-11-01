@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.29.5
+
+### Patch Changes
+
+-   - Fix: Resolve Qdrant codebase_search error by adding keyword index for type field (#8963 by @rossdonald, PR by @app/roomote)
+
 ## [3.29.4] - 2025-10-30
 
 - Feat: Add Minimax Provider (thanks @Maosghoul!)
