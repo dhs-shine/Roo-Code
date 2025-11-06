@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.30.2
+
+### Patch Changes
+
+- ![3.30.2 Release - Eliminating UI Flicker](/releases/3.30.2-release.png)
+
 ## [3.30.1] - 2025-11-04
 
 - Fix: Correct OpenRouter Mistral model embedding dimension from 3072 to 1536 (thanks @daniel-lxs!)
