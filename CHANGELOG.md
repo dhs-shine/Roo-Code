@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.30.3
+
+### Patch Changes
+
+- ![3.30.3 Release - Moonshot Brain](/releases/3.30.3-release.png)
+
 ## [3.30.2] - 2025-11-05
 
 ![3.30.2 Release - Eliminating UI Flicker](/releases/3.30.2-release.png)
