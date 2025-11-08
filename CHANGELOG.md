@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.31.0
+
+### Minor Changes
+
+- ![3.31.0 Release - Todo List and Task Header Improvements](/releases/3.31.0-release.png)
+
 ## [3.30.3] - 2025-11-06
 
 ![3.30.3 Release - Moonshot Brain](/releases/3.30.3-release.png)
