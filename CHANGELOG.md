@@ -1,10 +1,15 @@
 # Roo Code Changelog
 
-## 3.31.0
+## [3.31.0] - 2025-11-07
 
-### Minor Changes
+![3.31.0 Release - Todo List and Task Header Improvements](/releases/3.31.0-release.png)
 
-- ![3.31.0 Release - Todo List and Task Header Improvements](/releases/3.31.0-release.png)
+- Improvements to to-do lists and task headers (thanks @brunobergher!)
+- Fix: Prevent crash when streaming chunks have null choices array (thanks @daniel-lxs!)
+- Fix: Prevent context condensing on settings save when provider/model unchanged (#4430 by @hannesrudolph, PR by @daniel-lxs)
+- Fix: Respect custom OpenRouter URL for all API operations (#8947 by @sstraus, PR by @roomote)
+- Add comprehensive error logging to Roo Cloud provider (thanks @daniel-lxs!)
+- UX: Less caffeinated kangaroo (thanks @brunobergher!)
 
 ## [3.30.3] - 2025-11-06
 
