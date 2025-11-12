@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.31.1
+
+### Patch Changes
+
+- ![3.31.1 Release - Kangaroo Stuck in the Clouds](/releases/3.31.1-release.png)
+
 ## [3.31.0] - 2025-11-07
 
 ![3.31.0 Release - Todo List and Task Header Improvements](/releases/3.31.0-release.png)
