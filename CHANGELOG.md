@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.31.2
+
+### Patch Changes
+
+-   - Fix: Apply updated API profile settings when provider/model unchanged (#9208 by @hannesrudolph, PR by @hannesrudolph)
+
 ## [3.31.1] - 2025-11-11
 
 ![3.31.1 Release - Kangaroo Stuck in the Clouds](/releases/3.31.1-release.png)
