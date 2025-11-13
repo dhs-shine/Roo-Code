@@ -1,10 +1,12 @@
 # Roo Code Changelog
 
-## 3.31.3
+## [3.31.3] - 2025-11-13
 
-### Patch Changes
+![3.31.3 Release - Kangaroo Decrypting a Message](/releases/3.31.3-release.png)
 
-- ![3.31.3 Release - Kangaroo Decrypting a Message](/releases/3.31.3-release.png)
+- Fix: OpenAI Native encrypted_content handling and remove gpt-5-chat-latest verbosity flag (#9225 by @politsin, PR by @hannesrudolph)
+- Fix: Roo Code Cloud provider Anthropic input token normalization to avoid double-counting (thanks @hannesrudolph!)
+- Refactor: Rename sliding-window to context-management and truncateConversationIfNeeded to manageContext (thanks @hannesrudolph!)
 
 ## [3.31.2] - 2025-11-12
 
