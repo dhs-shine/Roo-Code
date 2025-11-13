@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.31.3
+
+### Patch Changes
+
+- ![3.31.3 Release - Kangaroo Decrypting a Message](/releases/3.31.3-release.png)
+
 ## [3.31.2] - 2025-11-12
 
 - Fix: Apply updated API profile settings when provider/model unchanged (#9208 by @hannesrudolph, PR by @hannesrudolph)
