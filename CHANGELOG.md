@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.32.1
+
+### Patch Changes
+
+- ![3.32.1 Release - Bug Fixes](/releases/3.32.1-release.png)
+
 ## [3.32.0] - 2025-11-14
 
 ![3.32.0 Release - GPT-5.1 models and OpenAI prompt caching](/releases/3.32.0-release.png)
