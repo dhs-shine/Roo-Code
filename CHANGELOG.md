@@ -22,8 +22,6 @@
 - Use VSCode theme color for outline button borders (PR #9336 by @app/roomote)
 - Replace broken badgen.net badges with shields.io (PR #9318 by @app/roomote)
 - Add max git status files setting to evals (PR #9322 by @mrubens)
-- Remove experimental setting for native tool calls (PR #9333 by @mrubens)
-- Move the native tool call toggle to experimental settings (PR #9297 by @mrubens)
 - Roo Code Cloud Provider pricing page and changes elsewhere (PR #9195 by @brunobergher)
 
 ## [3.32.1] - 2025-11-14
