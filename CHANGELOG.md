@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.33.0
+
+### Minor Changes
+
+- ![v3.33.0 Release - Twin Kangaroos and the Gemini Constellation](/releases/v3.33.0-release.png)
+
 ## [3.32.1] - 2025-11-14
 
 ![3.32.1 Release - Bug Fixes](/releases/3.32.1-release.png)
