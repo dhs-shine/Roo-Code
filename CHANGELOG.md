@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.33.1
+
+### Patch Changes
+
+- ![3.33.1 Release - Native Tool Protocol Fixes](/releases/3.33.1-release.png)
+
 ## [3.33.0] - 2025-11-18
 
 ![v3.33.0 Release - Twin Kangaroos and the Gemini Constellation](/releases/v3.33.0-release.png)
