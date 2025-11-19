@@ -1,10 +1,19 @@
 # Roo Code Changelog
 
-## 3.33.1
+## [3.33.1] - 2025-11-18
 
-### Patch Changes
+![3.33.1 Release - Native Tool Protocol Fixes](/releases/3.33.1-release.png)
 
-- ![3.33.1 Release - Native Tool Protocol Fixes](/releases/3.33.1-release.png)
+- Fix: Resolve native tool protocol race condition causing 400 errors (PR #9363 by @daniel-lxs)
+- Fix: Update tools to return structured JSON for native protocol (PR #9373 by @daniel-lxs)
+- Fix: Include nativeArgs in tool repetition detection (PR #9377 by @daniel-lxs)
+- Fix: Ensure no XML parsing when protocol is native (PR #9371 by @daniel-lxs)
+- Fix: Gemini maxOutputTokens and reasoning config (PR #9375 by @hannesrudolph)
+- Fix: Gemini thought signature validation and token counting errors (PR #9380 by @hannesrudolph)
+- Fix: Exclude XML tool examples from MODES section when native protocol enabled (PR #9367 by @daniel-lxs)
+- Add native tool calling support to OpenAI-compatible (PR #9369 by @mrubens)
+- Retry eval tasks if API instability detected (PR #9365 by @cte)
+- Add toolProtocol property to PostHog tool usage telemetry (PR #9374 by @app/roomote)
 
 ## [3.33.0] - 2025-11-18
 
