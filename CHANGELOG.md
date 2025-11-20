@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.33.2
+
+### Patch Changes
+
+-   - Enable native tool calling for Gemini provider (PR #9343 by @hannesrudolph)
+
 ## [3.33.1] - 2025-11-18
 
 ![3.33.1 Release - Native Tool Protocol Fixes](/releases/3.33.1-release.png)
