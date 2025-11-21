@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.33.3
+
+### Patch Changes
+
+- ![3.33.3 Release - Upgraded to Gemini 3 Pro Image Preview](/releases/3.33.3-release.png)
+
 ## [3.33.2] - 2025-11-19
 
 - Enable native tool calling for Gemini provider (PR #9343 by @hannesrudolph)
