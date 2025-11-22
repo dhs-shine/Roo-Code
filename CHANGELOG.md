@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.0
+
+### Minor Changes
+
+- ![3.34.0 Release - Browser Use 2.0](/releases/3.34.0-release.png)
+
 ## [3.33.3] - 2025-11-20
 
 ![3.33.3 Release - Gemini 3 Pro Image Preview](/releases/3.33.3-release.png)
@@ -16,7 +22,6 @@
 - Improve read_file tool description with examples (PR #9422 by @daniel-lxs)
 - Update glob dependency to ^11.1.0 (PR #9449 by @jr)
 - Update tar-fs to 3.1.1 via pnpm override (PR #9450 by @app/roomote)
-
 
 ## [3.33.2] - 2025-11-19
 
