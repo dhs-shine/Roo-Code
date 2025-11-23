@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.1
+
+### Patch Changes
+
+-   - Show the prompt for image generation in the UI (PR #9505 by @mrubens)
+
 ## [3.34.0] - 2025-11-21
 
 ![3.34.0 Release - Browser Use 2.0](/releases/3.34.0-release.png)
