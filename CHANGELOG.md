@@ -1,10 +1,11 @@
 # Roo Code Changelog
 
-## 3.34.1
+## [3.34.1] - 2025-11-23
 
-### Patch Changes
-
--   - Show the prompt for image generation in the UI (PR #9505 by @mrubens)
+- Show the prompt for image generation in the UI (PR #9505 by @mrubens)
+- Fix double todo list display issue (PR #9517 by @mrubens)
+- Add tracking for cloud synced messages (PR #9518 by @mrubens)
+- Enable the Roo Code Cloud provider in evals (PR #9492 by @cte)
 
 ## [3.34.0] - 2025-11-21
 
