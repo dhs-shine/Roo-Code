@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.2
+
+### Patch Changes
+
+- ![3.34.2 Release - Opus Conductor](/releases/3.34.2-release.png)
+
 ## [3.34.1] - 2025-11-23
 
 - Show the prompt for image generation in the UI (PR #9505 by @mrubens)
