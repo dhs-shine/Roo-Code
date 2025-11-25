@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.4
+
+### Patch Changes
+
+- ![3.34.4 Release - AI Image Generation](/releases/3.34.4-release.png)
+
 ## [3.34.3] - 2025-11-25
 
 ![3.34.3 Release - Streaming and Opus 4.5](/releases/3.34.3-release.png)
