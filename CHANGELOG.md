@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.3
+
+### Patch Changes
+
+- ![3.34.3 Release - Streaming and Opus 4.5](/releases/3.34.3-release.png)
+
 ## [3.34.2] - 2025-11-24
 
 ![3.34.2 Release - Opus Conductor](/releases/3.34.2-release.png)
