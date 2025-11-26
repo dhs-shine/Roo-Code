@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.6
+
+### Patch Changes
+
+- ![3.34.6 Release - Bedrock Embeddings](/releases/3.34.6-release.png)
+
 ## [3.34.5] - 2025-11-25
 
 ![3.34.5 Release - Experimental Parallel Tool Calling](/releases/3.34.5-release.png)
