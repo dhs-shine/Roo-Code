@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.5
+
+### Patch Changes
+
+- ![3.34.5 Release - Multi-Tool Mastery](/releases/3.34.5-release.png)
+
 ## [3.34.4] - 2025-11-25
 
 ![3.34.4 Release - BFL Image Generation](/releases/3.34.4-release.png)
