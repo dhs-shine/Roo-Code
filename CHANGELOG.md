@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.34.8
+
+### Patch Changes
+
+- ![3.34.8 Release - Race Condition Fix](/releases/3.34.8-release.png)
+
 ## [3.34.7] - 2025-11-27
 
 ![3.34.7 Release - More Native Tool Integrations](/releases/3.34.7-release.png)
