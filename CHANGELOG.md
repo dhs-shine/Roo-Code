@@ -1,10 +1,9 @@
 # Roo Code Changelog
 
-## 3.35.1
+## [3.35.1] - 2025-12-01
 
-### Patch Changes
-
--   - Fix: Flush pending tool results before task delegation (PR #9726 by @daniel-lxs)
+- Fix: Flush pending tool results before task delegation (PR #9726 by @daniel-lxs)
+- Improve: Better IPC error logging for easier debugging (PR #9727 by @cte)
 
 ## [3.35.0] - 2025-12-01
 
