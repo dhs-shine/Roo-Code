@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.35.0
+
+### Minor Changes
+
+- ![3.35.0 Release - Subtasks & Native Tools](/releases/3.35.0-release.png)
+
 ## [3.34.8] - 2025-11-27
 
 ![3.34.8 Release - Race Condition Fix](/releases/3.34.8-release.png)
