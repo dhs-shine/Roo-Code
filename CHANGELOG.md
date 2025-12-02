@@ -1,10 +1,13 @@
 # Roo Code Changelog
 
-## 3.35.2
+## [3.35.2] - 2025-12-01
 
-### Patch Changes
+![3.35.2 Release - Model Default Temperatures](/releases/3.35.2-release.png)
 
-- ![3.35.2 Release - Model Default Temperatures](/releases/3.35.2-release.png)
+- Allow models to contain default temperature settings for provider-specific optimal defaults (PR #9734 by @mrubens)
+- Add tag-based native tool calling detection for Roo provider models (PR #9735 by @mrubens)
+- Enable native tool support for all LiteLLM models by default (PR #9736 by @mrubens)
+- Pass app version to provider for improved request tracking (PR #9730 by @cte)
 
 ## [3.35.1] - 2025-12-01
 
