@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.35.2
+
+### Patch Changes
+
+- ![3.35.2 Release - Model Default Temperatures](/releases/3.35.2-release.png)
+
 ## [3.35.1] - 2025-12-01
 
 - Fix: Flush pending tool results before task delegation (PR #9726 by @daniel-lxs)
