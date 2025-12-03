@@ -1,10 +1,10 @@
 # Roo Code Changelog
 
-## 3.35.4
+## [3.35.4] - 2025-12-02
 
-### Patch Changes
-
--   - Fix: Handle malformed native tool calls to prevent hanging (PR #9758 by @daniel-lxs)
+- Fix: Handle malformed native tool calls to prevent hanging (PR #9758 by @daniel-lxs)
+- Fix: Remove reasoning toggles for GLM-4.5 and GLM-4.6 on z.ai provider (PR #9752 by @roomote)
+- Refactor: Remove line_count parameter from write_to_file tool (PR #9667 by @hannesrudolph)
 
 ## [3.35.3] - 2025-12-02
 
