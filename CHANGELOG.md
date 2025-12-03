@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.35.4
+
+### Patch Changes
+
+-   - Fix: Handle malformed native tool calls to prevent hanging (PR #9758 by @daniel-lxs)
+
 ## [3.35.3] - 2025-12-02
 
 - Switch to new welcome view for improved onboarding experience (PR #9741 by @mrubens)
