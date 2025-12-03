@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.35.5
+
+### Patch Changes
+
+-   - Feat: Add provider routing selection for OpenRouter embeddings (#9144 by @SannidhyaSah, PR #9693 by @SannidhyaSah)
+
 ## [3.35.4] - 2025-12-02
 
 - Fix: Handle malformed native tool calls to prevent hanging (PR #9758 by @daniel-lxs)
