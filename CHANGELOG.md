@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.0
+
+### Minor Changes
+
+- ![3.36.0 Release - Rewind Kangaroo](/releases/3.36.0-release.png)
+
 ## [3.35.5] - 2025-12-03
 
 - Feat: Add provider routing selection for OpenRouter embeddings (#9144 by @SannidhyaSah, PR #9693 by @SannidhyaSah)
