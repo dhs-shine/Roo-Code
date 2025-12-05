@@ -18,8 +18,6 @@
 - Evals UI: Add filtering, bulk delete, tool consolidation, and run notes (PR #9837 by @hannesrudolph)
 - Evals UI: Add multi-model launch and UI improvements (PR #9845 by @hannesrudolph)
 - Web: New pricing page (PR #9821 by @brunobergher)
-- Revert reasoning_details ID sanitization in favor of alternative fix (PR #9839 by @daniel-lxs, reverted in PR #9846 by @mrubens)
-- Revert reasoning_details ID exclusion in favor of alternative fix (PR #9847 by @mrubens, reverted in PR #9850 by @mrubens)
 
 ## [3.36.0] - 2025-12-04
 
