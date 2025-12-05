@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.1
+
+### Patch Changes
+
+- ![3.36.1 Release - Message Management & Stability Improvements](/releases/3.36.1-release.png)
+
 ## [3.36.0] - 2025-12-04
 
 ![3.36.0 Release - Rewind Kangaroo](/releases/3.36.0-release.png)
