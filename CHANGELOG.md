@@ -1,11 +1,44 @@
 # Roo Code Changelog
 
-## 3.36.3
+## [3.36.3] - 2025-12-09
 
-### Patch Changes
-
-- Adds support for minimal and medium reasoning effort levels in the Gemini provider implementation
-- v3.36.3
+- Adds support for minimal and medium reasoning effort levels in the Gemini provider implementation (PR #9973 by @hannesrudolph)
+- Unified context-management architecture with improved UX for better conversation context handling (PR #9795 by @hannesrudolph)
+- Update DeepSeek models to V3.2 with new pricing (PR #9962 by @hannesrudolph)
+- Add versioned settings support with minPluginVersion gating for Roo provider (PR #9934 by @hannesrudolph)
+- Make Architect mode save plans to `/plans` directory and gitignore it (PR #9944 by @brunobergher)
+- Add streaming tool stats and token usage throttling for improved performance (PR #9926 by @hannesrudolph)
+- Add search_replace native tool for single-replacement operations (PR #9918 by @hannesrudolph)
+- Add timeout configuration to OpenAI Compatible Provider Client (PR #9898 by @dcbartlett)
+- Add xhigh reasoning effort option for gpt-5.1-codex-max (PR #9900 by @andrewginns)
+- Add tool preferences configuration for xAI models (PR #9923 by @hannesrudolph)
+- Add ability to save screenshots from the browser tool (PR #9963 by @mrubens)
+- Add DeepSeek V3-2 support for Baseten Provider (PR #9861 by @AlexKer)
+- Add Kimi, MiniMax, and Qwen model configurations for Bedrock (PR #9905 by @app/roomote)
+- Add announcement support CTA and social icons (PR #9945 by @hannesrudolph)
+- Default to using native tools when supported on OpenRouter (PR #9878 by @mrubens)
+- Update xAI models catalog with latest models (PR #9872 by @hannesrudolph)
+- Tweaks to Baseten model definitions (PR #9866 by @mrubens)
+- Stop making count_tokens requests to improve performance (PR #9884 by @mrubens)
+- Refactor: Decouple tools from system prompt for better modularity (PR #9784 by @daniel-lxs)
+- Refactor: Consolidate ThinkingBudget components and fix disable handling (PR #9930 by @hannesrudolph)
+- Add API error telemetry to OpenRouter provider (PR #9953 by @daniel-lxs)
+- Evals UI: Make eval runs deleteable (PR #9909 by @mrubens)
+- Web: Product pages (PR #9865 by @brunobergher)
+- Fix: Respect explicit supportsReasoningEffort array values (PR #9970 by @hannesrudolph)
+- Fix: Validate and fix tool_result IDs before API requests (PR #9952 by @daniel-lxs)
+- Fix: Always show tool protocol selector for openai-compatible provider (PR #9966 by @hannesrudolph)
+- Fix: Return undefined instead of 0 for disabled API timeout (PR #9960 by @hannesrudolph)
+- Fix: Display actual API error message instead of generic text on retry (PR #9954 by @hannesrudolph)
+- Fix: Add finish_reason processing to xai.ts provider (PR #9929 by @daniel-lxs)
+- Fix: Exclude apply_diff from native tools when diffEnabled is false (PR #9920 by @app/roomote)
+- Fix: Suppress 'ask promise was ignored' error in handleError (PR #9914 by @daniel-lxs)
+- Fix: Process finish_reason to emit tool_call_end events (PR #9927 by @daniel-lxs)
+- Fix: Use foreground color for context-management icons (PR #9912 by @hannesrudolph)
+- Fix: Sanitize removed/invalid API providers to prevent infinite loop (PR #9869 by @hannesrudolph)
+- Improve OpenAI error messages to be more useful (PR #9639 by @mrubens)
+- Improve cloud job error logging for RCC provider errors (PR #9924 by @cte)
+- Improve error logs for parseToolCall exceptions (PR #9857 by @cte)
 
 ## [3.36.2] - 2025-12-04
 
