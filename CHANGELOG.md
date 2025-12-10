@@ -1,5 +1,12 @@
 # Roo Code Changelog
 
+## 3.36.3
+
+### Patch Changes
+
+- Adds support for minimal and medium reasoning effort levels in the Gemini provider implementation
+- v3.36.3
+
 ## [3.36.2] - 2025-12-04
 
 ![3.36.2 Release - Dynamic API Settings](/releases/3.36.2-release.png)
