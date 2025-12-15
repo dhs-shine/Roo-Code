@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.7
+
+### Patch Changes
+
+-   - Improve tool configuration for OpenAI models in OpenRouter (PR #10082 by @hannesrudolph)
+
 ## [3.36.6] - 2025-12-12
 
 ![3.36.6 Release - Tool Alias Support](/releases/3.36.6-release.png)
