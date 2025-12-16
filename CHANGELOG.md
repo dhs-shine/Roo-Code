@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.9
+
+### Patch Changes
+
+- ![3.36.9 Release - Cross-Provider Compatibility](/releases/3.36.9-release.png)
+
 ## 3.36.8
 
 ### Patch Changes
