@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.10
+
+### Patch Changes
+
+- ![3.36.10 Release - Gemini 3 Flash Preview](/releases/3.36.10-release.png)
+
 ## [3.36.9] - 2025-12-15
 
 ![3.36.9 Release - Cross-Provider Compatibility](/releases/3.36.9-release.png)
