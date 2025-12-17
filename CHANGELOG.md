@@ -1,6 +1,6 @@
 # Roo Code Changelog
 
-## [3.36.10] - 2025-12-17
+## [3.36.11] - 2025-12-17
 
 ![3.36.11 Release - Native Tool Calling Enhancements](/releases/3.36.11-release.png)
 
