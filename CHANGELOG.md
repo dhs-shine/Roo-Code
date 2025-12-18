@@ -1,10 +1,12 @@
 # Roo Code Changelog
 
-## 3.36.12
+## [3.36.12] - 2025-12-18
 
-### Patch Changes
+![3.36.12 Release - Better telemetry and Bedrock fixes](/releases/3.36.12-release.png)
 
-- ![3.36.12 Release - Better telemetry and Bedrock fixes](/releases/3.36.12-release.png)
+- Fix: Add userAgentAppId to Bedrock embedder for code indexing (#10165 by @jackrein, PR #10166 by @roomote)
+- Update OpenAI and Gemini tool preferences for improved model behavior (PR #10170 by @hannesrudolph)
+- Extract error messages from JSON payloads for better PostHog error grouping (PR #10163 by @daniel-lxs)
 
 ## [3.36.11] - 2025-12-17
 
