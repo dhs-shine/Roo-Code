@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.13
+
+### Patch Changes
+
+- ![3.36.13 Release - Native Tool Protocol](/releases/3.36.13-release.png)
+
 ## [3.36.12] - 2025-12-18
 
 ![3.36.12 Release - Better telemetry and Bedrock fixes](/releases/3.36.12-release.png)
