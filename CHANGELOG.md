@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.36.14
+
+### Patch Changes
+
+- ![3.36.14 Release - Native Tool Calling for Claude on Vertex AI](/releases/3.36.14-release.png)
+
 ## [3.36.13] - 2025-12-18
 
 ![3.36.13 Release - Native Tool Protocol](/releases/3.36.13-release.png)
