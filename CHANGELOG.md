@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.37.1
+
+### Patch Changes
+
+- ![3.37.1 Release - Tool Fixes and Provider Improvements](/releases/3.37.1-release.png)
+
 ## [3.37.0] - 2025-12-22
 
 ![3.37.0 Release - Custom Tool Calling](/releases/3.37.0-release.png)
