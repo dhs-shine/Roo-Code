@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.38.0
+
+### Minor Changes
+
+- ![3.38.0 Release - Skills](/releases/3.38.0-release.png)
+
 ## [3.37.1] - 2025-12-23
 
 ![3.37.1 Release - Tool Fixes and Provider Improvements](/releases/3.37.1-release.png)
