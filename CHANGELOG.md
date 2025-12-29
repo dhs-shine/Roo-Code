@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.38.1
+
+### Patch Changes
+
+- ![3.38.1 Release - Bug Fixes and Stability](/releases/3.38.1-release.png)
+
 ## [3.38.0] - 2025-12-27
 
 ![3.38.0 Release - Skills](/releases/3.38.0-release.png)
