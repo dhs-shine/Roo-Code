@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.38.2
+
+### Patch Changes
+
+- ![3.38.2 Release - Skill Alignment](/releases/3.38.2-release.png)
+
 ## [3.38.1] - 2025-12-29
 
 ![3.38.1 Release - Bug Fixes and Stability](/releases/3.38.1-release.png)
