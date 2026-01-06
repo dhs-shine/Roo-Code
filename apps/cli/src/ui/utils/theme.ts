@@ -65,14 +65,20 @@ export const thinkingText = catppuccin.overlay2 // Subtle gray for thinking text
 
 // UI element colors
 export const borderColor = catppuccin.surface1 // Surface color for borders
+export const borderColorActive = catppuccin.blue // Active/focused border color
 export const dimText = catppuccin.overlay1 // Dim text
 export const promptColor = catppuccin.overlay2 // Prompt indicator
+export const promptColorActive = catppuccin.blue // Active prompt color
 export const placeholderColor = catppuccin.overlay0 // Placeholder text
 
 // Status colors
 export const successColor = catppuccin.green // Green for success
 export const errorColor = catppuccin.red // Red for errors
 export const warningColor = catppuccin.yellow // Yellow for warnings
+
+// Focus indicator colors
+export const focusColor = catppuccin.blue // Focus indicator (blue accent)
+export const scrollActiveColor = catppuccin.mauve // Scroll area active indicator (purple)
 
 // Base text color
 export const text = catppuccin.text // Standard text color

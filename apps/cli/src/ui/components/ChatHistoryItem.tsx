@@ -48,18 +48,28 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 					</Text>
 				</Box>
 			)
-		case "tool":
+		case "tool": {
+			let toolContent = message.toolDisplayOutput || content
+
+			// Replace tab characters with spaces to prevent terminal width miscalculation
+			// Tabs expand to variable widths in terminals, causing layout issues
+			toolContent = toolContent.replace(/\t/g, "    ")
+
+			// Also strip any carriage returns that could cause issues
+			toolContent = toolContent.replace(/\r/g, "")
+
 			return (
 				<Box flexDirection="column" paddingX={1}>
 					<Text bold color={theme.toolHeader}>
 						{`tool - ${message.toolDisplayName || message.toolName || "unknown"}`}
 					</Text>
 					<Text color={theme.toolText}>
-						{message.toolDisplayOutput || content}
+						{toolContent}
 						<Newline />
 					</Text>
 				</Box>
 			)
+		}
 		case "system":
 			// System messages are typically rendered as Header, not here.
 			// But if they appear, show them subtly.

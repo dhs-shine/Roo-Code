@@ -15,6 +15,7 @@ interface TerminalSize {
  * Debounces resize events to prevent rendering artifacts
  */
 export function useTerminalSize(): TerminalSize {
+	// Get initial size synchronously - this is the value used for first render
 	const [size, setSize] = useState<TerminalSize>(() => ({
 		columns: process.stdout.columns || 80,
 		rows: process.stdout.rows || 24,

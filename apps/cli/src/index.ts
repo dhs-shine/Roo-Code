@@ -42,8 +42,8 @@ program
 	.version(packageJson.version)
 
 program
-	.argument("[prompt]", "The prompt/task to execute (optional in TUI mode)")
-	.option("-w, --workspace <path>", "Workspace path to operate in", process.cwd())
+	.argument("[workspace]", "Workspace path to operate in", process.cwd())
+	.option("-P, --prompt <prompt>", "The prompt/task to execute (optional in TUI mode)")
 	.option("-e, --extension <path>", "Path to the extension bundle directory")
 	.option("-v, --verbose", "Enable verbose output (show VSCode and extension logs)", false)
 	.option("-d, --debug", "Enable debug output (includes detailed debug information)", false)
@@ -61,9 +61,9 @@ program
 	.option("--no-tui", "Disable TUI, use plain text output")
 	.action(
 		async (
-			prompt: string | undefined,
+			workspaceArg: string,
 			options: {
-				workspace: string
+				prompt?: string
 				extension?: string
 				verbose: boolean
 				debug: boolean
@@ -90,7 +90,7 @@ program
 
 			const extensionPath = options.extension || getDefaultExtensionPath(__dirname)
 			const apiKey = options.apiKey || getApiKeyFromEnv(options.provider)
-			const workspacePath = path.resolve(options.workspace)
+			const workspacePath = path.resolve(workspaceArg)
 
 			if (!apiKey) {
 				console.error(
@@ -127,9 +127,9 @@ program
 			}
 
 			// In plain text mode, prompt is required
-			if (!useTui && !prompt) {
+			if (!useTui && !options.prompt) {
 				console.error("[CLI] Error: prompt is required in plain text mode")
-				console.error("[CLI] Usage: roo <prompt> [options]")
+				console.error("[CLI] Usage: roo [workspace] -P <prompt> [options]")
 				console.error("[CLI] Use TUI mode (without --no-tui) for interactive input")
 				process.exit(1)
 			}
@@ -137,9 +137,6 @@ program
 			if (useTui) {
 				// TUI Mode - render Ink application
 				try {
-					// Clear screen before Ink starts
-					process.stdout.write("\x1B[2J\x1B[0;0H")
-
 					const { render } = await import("ink")
 					const { App } = await import("./ui/App.js")
 
@@ -177,7 +174,7 @@ program
 
 					render(
 						createElement(App, {
-							initialPrompt: prompt || "", // Empty string if no prompt - user will type in TUI
+							initialPrompt: options.prompt || "", // Empty string if no prompt - user will type in TUI
 							workspacePath: workspacePath,
 							extensionPath: path.resolve(extensionPath),
 							apiProvider: options.provider,
@@ -190,6 +187,7 @@ program
 							exitOnComplete: options.exitOnComplete,
 							reasoningEffort: options.reasoningEffort,
 							createExtensionHost: createExtensionHost,
+							version: packageJson.version,
 						}),
 						{
 							exitOnCtrlC: false, // Handle Ctrl+C in App component for double-press exit
@@ -239,7 +237,7 @@ program
 
 				try {
 					await host.activate()
-					await host.runTask(prompt!) // prompt is guaranteed non-null in plain text mode
+					await host.runTask(options.prompt!) // prompt is guaranteed non-null in plain text mode
 					await host.dispose()
 
 					if (options.exitOnComplete) {

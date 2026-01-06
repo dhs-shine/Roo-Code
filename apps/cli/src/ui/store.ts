@@ -1,34 +1,46 @@
 import { create } from "zustand"
 
-import type { TUIMessage, PendingAsk, FileSearchResult } from "./types.js"
+import type { TUIMessage, PendingAsk, FileSearchResult, SlashCommandResult } from "./types.js"
 
+/**
+ * CLI application state.
+ *
+ * Note: Autocomplete picker UI state (isOpen, selectedIndex) is now managed
+ * by the useAutocompletePicker hook. The store only holds data that needs
+ * to be shared between components or persisted (like search results from API).
+ */
 interface CLIState {
+	// Message history
 	messages: TUIMessage[]
 	pendingAsk: PendingAsk | null
+
+	// Task state
 	isLoading: boolean
 	isComplete: boolean
 	hasStartedTask: boolean
 	error: string | null
+
+	// Autocomplete data (from API/extension)
 	fileSearchResults: FileSearchResult[]
-	isFilePickerOpen: boolean
-	filePickerQuery: string
-	filePickerSelectedIndex: number
+	allSlashCommands: SlashCommandResult[]
 }
 
 interface CLIActions {
+	// Message actions
 	addMessage: (msg: TUIMessage) => void
 	updateMessage: (id: string, content: string, partial?: boolean) => void
+
+	// Task actions
 	setPendingAsk: (ask: PendingAsk | null) => void
 	setLoading: (loading: boolean) => void
 	setComplete: (complete: boolean) => void
 	setHasStartedTask: (started: boolean) => void
 	setError: (error: string | null) => void
 	reset: () => void
+
+	// Autocomplete data actions
 	setFileSearchResults: (results: FileSearchResult[]) => void
-	setFilePickerOpen: (open: boolean) => void
-	setFilePickerQuery: (query: string) => void
-	setFilePickerSelectedIndex: (index: number) => void
-	clearFilePicker: () => void
+	setAllSlashCommands: (commands: SlashCommandResult[]) => void
 }
 
 const initialState: CLIState = {
@@ -39,9 +51,7 @@ const initialState: CLIState = {
 	hasStartedTask: false,
 	error: null,
 	fileSearchResults: [],
-	isFilePickerOpen: false,
-	filePickerQuery: "",
-	filePickerSelectedIndex: 0,
+	allSlashCommands: [],
 }
 
 export const useCLIStore = create<CLIState & CLIActions>((set) => ({
@@ -94,15 +104,6 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	setHasStartedTask: (started) => set({ hasStartedTask: started }),
 	setError: (error) => set({ error }),
 	reset: () => set(initialState),
-	setFileSearchResults: (results) => set({ fileSearchResults: results, filePickerSelectedIndex: 0 }),
-	setFilePickerOpen: (open) => set({ isFilePickerOpen: open }),
-	setFilePickerQuery: (query) => set({ filePickerQuery: query }),
-	setFilePickerSelectedIndex: (index) => set({ filePickerSelectedIndex: index }),
-	clearFilePicker: () =>
-		set({
-			fileSearchResults: [],
-			isFilePickerOpen: false,
-			filePickerQuery: "",
-			filePickerSelectedIndex: 0,
-		}),
+	setFileSearchResults: (results) => set({ fileSearchResults: results }),
+	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
 }))

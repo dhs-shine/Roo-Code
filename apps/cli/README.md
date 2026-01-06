@@ -71,7 +71,13 @@ By default, the CLI prompts for approval before executing actions:
 ```bash
 export OPENROUTER_API_KEY=sk-or-v1-...
 
-roo "What is this project?" --workspace ~/Documents/my-project
+roo ~/Documents/my-project -P "What is this project?"
+```
+
+You can also run without a prompt and enter it interactively in TUI mode:
+
+```bash
+roo ~/Documents/my-project
 ```
 
 In interactive mode:
@@ -86,7 +92,7 @@ In interactive mode:
 For automation and scripts, use `-y` to auto-approve all actions:
 
 ```bash
-roo -y "Refactor the utils.ts file" --workspace ~/Documents/my-project
+roo ~/Documents/my-project -y -P "Refactor the utils.ts file"
 ```
 
 In non-interactive mode:
@@ -99,7 +105,8 @@ In non-interactive mode:
 
 | Option                            | Description                                                                    | Default           |
 | --------------------------------- | ------------------------------------------------------------------------------ | ----------------- |
-| `-w, --workspace <path>`          | Workspace path to operate in                                                   | Current directory |
+| `[workspace]`                     | Workspace path to operate in (positional argument)                             | Current directory |
+| `-P, --prompt <prompt>`           | The prompt/task to execute (optional in TUI mode)                              | None              |
 | `-e, --extension <path>`          | Path to the extension bundle directory                                         | Auto-detected     |
 | `-v, --verbose`                   | Enable verbose output (show VSCode and extension logs)                         | `false`           |
 | `-d, --debug`                     | Enable debug output (includes detailed debug information, prompts, paths, etc) | `false`           |

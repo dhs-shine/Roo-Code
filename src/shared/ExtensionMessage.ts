@@ -191,7 +191,9 @@ export interface ExtensionMessage {
 	values?: Record<string, any>
 	requestId?: string
 	promptText?: string
-	results?: { path: string; type: "file" | "folder"; label?: string }[]
+	results?:
+		| { path: string; type: "file" | "folder"; label?: string }[]
+		| { name: string; description?: string; argumentHint?: string; source: "global" | "project" | "built-in" }[]
 	error?: string
 	setting?: string
 	value?: any

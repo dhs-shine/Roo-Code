@@ -1,7 +1,7 @@
 import { memo } from "react"
 import { Text, Box } from "ink"
 
-import { useTerminalSize } from "../hooks/useTerminalSize.js"
+import { useTerminalSize } from "../hooks/TerminalSizeContext.js"
 import * as theme from "../utils/theme.js"
 
 interface HeaderProps {
@@ -9,7 +9,7 @@ interface HeaderProps {
 	model: string
 	mode: string
 	reasoningEffort?: string
-	version?: string
+	version: string
 }
 
 const ASCII_ROO = `  _,'   ___
@@ -19,13 +19,9 @@ const ASCII_ROO = `  _,'   ___
         //   \\\\
       ,/'     \`\\_,`
 
-function HorizontalLine() {
+function Header({ model, cwd, mode, reasoningEffort, version }: HeaderProps) {
 	const { columns } = useTerminalSize()
-	return <Text color={theme.borderColor}>{"─".repeat(columns)}</Text>
-}
 
-function Header({ model, cwd, mode, reasoningEffort, version = "0.1.0" }: HeaderProps) {
-	const { columns } = useTerminalSize()
 	const homeDir = process.env.HOME || process.env.USERPROFILE || ""
 	const displayCwd = cwd.startsWith(homeDir) ? cwd.replace(homeDir, "~") : cwd
 	const title = `Roo Code CLI v${version}`
@@ -50,7 +46,8 @@ function Header({ model, cwd, mode, reasoningEffort, version = "0.1.0" }: Header
 					</Box>
 				</Box>
 			</Box>
-			<HorizontalLine />
+			{/* Inline horizontal line using the same columns value */}
+			<Text color={theme.borderColor}>{"─".repeat(columns)}</Text>
 		</Box>
 	)
 }

@@ -1,99 +1,24 @@
-/**
- * useInputHistory Hook
- *
- * Provides input history navigation for CLI text inputs.
- * Navigation is triggered via navigateUp/navigateDown functions.
- * History is persisted to ~/.roo/cli-history.json
- */
-
 import { useState, useEffect, useCallback, useRef } from "react"
 
 import { loadHistory, addToHistory } from "../../utils/historyStorage.js"
 
 export interface UseInputHistoryOptions {
-	/**
-	 * Whether the hook should respond to navigation calls.
-	 * Set to false when input is not active/focused.
-	 * @default true
-	 */
 	isActive?: boolean
-
-	/**
-	 * Callback to get the current input value when starting to browse history.
-	 * This allows saving the user's draft before navigating.
-	 */
 	getCurrentInput?: () => string
 }
 
 export interface UseInputHistoryReturn {
-	/**
-	 * Add a new entry to history (call on submit)
-	 */
 	addEntry: (entry: string) => Promise<void>
-
-	/**
-	 * Current history value being browsed, or null if not browsing.
-	 * Use this value to display in the input when browsing history.
-	 */
 	historyValue: string | null
-
-	/**
-	 * Whether currently browsing through history
-	 */
 	isBrowsing: boolean
-
-	/**
-	 * Reset browsing state and optionally save current input as draft.
-	 * Call this when user starts typing.
-	 */
 	resetBrowsing: (currentInput?: string) => void
-
-	/**
-	 * All history entries (oldest first)
-	 */
 	history: string[]
-
-	/**
-	 * The saved draft (what user was typing before navigating history)
-	 */
 	draft: string
-
-	/**
-	 * Set the current draft value (call from onChange)
-	 */
 	setDraft: (value: string) => void
-
-	/**
-	 * Navigate to older history entry (call when up arrow at first line)
-	 */
 	navigateUp: () => void
-
-	/**
-	 * Navigate to newer history entry (call when down arrow at last line)
-	 */
 	navigateDown: () => void
 }
 
-/**
- * Hook for managing input history with up/down arrow navigation
- *
- * @example
- * ```tsx
- * const { addEntry, historyValue, draft, setDraft } = useInputHistory({ isActive: true });
- *
- * // Track current input via onChange
- * <TextInput onChange={setDraft} ... />
- *
- * // When user submits input:
- * const handleSubmit = async (text: string) => {
- *   await addEntry(text);
- *   // ... handle submission
- * };
- *
- * // Use historyValue to control input:
- * // If historyValue is not null, display it instead of current input
- * ```
- */
 export function useInputHistory(options: UseInputHistoryOptions = {}): UseInputHistoryReturn {
 	const { isActive = true, getCurrentInput } = options
 

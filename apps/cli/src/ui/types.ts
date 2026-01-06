@@ -63,6 +63,7 @@ export interface AppProps {
 	debug: boolean
 	exitOnComplete: boolean
 	reasoningEffort?: string
+	version: string
 }
 
 export type View = "UserInput" | "AgentResponse" | "ToolUse" | "Default"
@@ -71,4 +72,11 @@ export interface FileSearchResult {
 	path: string
 	type: "file" | "folder"
 	label?: string
+}
+
+export interface SlashCommandResult {
+	name: string
+	description?: string
+	argumentHint?: string
+	source: "global" | "project" | "built-in"
 }

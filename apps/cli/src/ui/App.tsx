@@ -8,11 +8,36 @@ import { useCLIStore } from "./store.js"
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
-import { FilePickerInput } from "./components/FilePickerInput.js"
-import { FilePickerSelect } from "./components/FilePickerSelect.js"
-import { useTerminalSize } from "./hooks/useTerminalSize.js"
+import {
+	AutocompleteInput,
+	PickerSelect,
+	createFileTrigger,
+	createSlashCommandTrigger,
+	toFileResult,
+	toSlashCommandResult,
+	type AutocompleteInputHandle,
+	type AutocompletePickerState,
+	type AutocompleteTrigger,
+	type FileResult,
+	type SlashCommandResult as SlashCommandItem,
+} from "./components/autocomplete/index.js"
+import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
+import ScrollIndicator from "./components/ScrollIndicator.js"
+import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
 import * as theme from "./utils/theme.js"
-import type { AppProps, TUIMessage, PendingAsk, SayType, AskType, View, FileSearchResult } from "./types.js"
+import type {
+	AppProps,
+	TUIMessage,
+	PendingAsk,
+	SayType,
+	AskType,
+	View,
+	FileSearchResult,
+	SlashCommandResult,
+} from "./types.js"
+
+// Layout constants
+const PICKER_HEIGHT = 10 // Max height for picker when open
 
 /**
  * Interface for the extension host that the TUI interacts with
@@ -95,17 +120,18 @@ function getView(messages: TUIMessage[], pendingAsk: PendingAsk | null, isLoadin
 }
 
 /**
- * Full-width horizontal line component - responsive to terminal resize
+ * Full-width horizontal line component - uses terminal size from context
  */
-function HorizontalLine() {
+function HorizontalLine({ active = false }: { active?: boolean }) {
 	const { columns } = useTerminalSize()
-	return <Text color={theme.borderColor}>{"─".repeat(columns)}</Text>
+	const color = active ? theme.borderColorActive : theme.borderColor
+	return <Text color={color}>{"─".repeat(columns)}</Text>
 }
 
 /**
- * Main TUI Application Component
+ * Inner App component that uses the terminal size context
  */
-export function App({
+function AppInner({
 	initialPrompt,
 	workspacePath,
 	extensionPath,
@@ -119,6 +145,7 @@ export function App({
 	exitOnComplete,
 	reasoningEffort,
 	createExtensionHost,
+	version,
 }: TUIAppProps) {
 	const { exit } = useApp()
 
@@ -136,15 +163,16 @@ export function App({
 		setHasStartedTask,
 		setError,
 		fileSearchResults,
-		isFilePickerOpen,
-		filePickerSelectedIndex,
+		allSlashCommands,
 		setFileSearchResults,
-		setFilePickerOpen,
-		setFilePickerSelectedIndex,
-		clearFilePicker,
+		setAllSlashCommands,
 	} = useCLIStore()
 
 	const hostRef = useRef<ExtensionHostInterface | null>(null)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const autocompleteRef = useRef<AutocompleteInputHandle<any>>(null)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const followupAutocompleteRef = useRef<AutocompleteInputHandle<any>>(null)
 
 	// Track seen message timestamps to filter duplicates and the prompt echo
 	const seenMessageIds = useRef<Set<string>>(new Set())
@@ -160,14 +188,71 @@ export function App({
 	// Ref to track transition state (handles async state update timing)
 	const isTransitioningToCustomInput = useRef(false)
 
+	// Manual focus override: 'scroll' | 'input' | null (null = auto-determine)
+	const [manualFocus, setManualFocus] = useState<"scroll" | "input" | null>(null)
+
+	// Autocomplete picker state (received from AutocompleteInput via callback)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const [pickerState, setPickerState] = useState<AutocompletePickerState<any>>({
+		activeTrigger: null,
+		results: [],
+		selectedIndex: 0,
+		isOpen: false,
+		isLoading: false,
+		triggerInfo: null,
+	})
+
+	// Scroll area state
+	const { rows } = useTerminalSize()
+	const [scrollState, setScrollState] = useState({ scrollTop: 0, maxScroll: 0, isAtBottom: true })
+	const { scrollToBottomTrigger, scrollToBottom } = useScrollToBottom()
+
 	// Determine current view
 	const view = getView(messages, pendingAsk, isLoading)
 
+	// Determine if we should show the approval prompt (Y/N) instead of text input
+	const showApprovalPrompt = pendingAsk && pendingAsk.type !== "followup"
+
+	// Determine if we're in a mode where focus can be toggled (text input is available)
+	const canToggleFocus =
+		!showApprovalPrompt &&
+		(!pendingAsk || // Initial input or task complete or loading
+			pendingAsk.type === "followup" || // Followup question with suggestions or custom input
+			showCustomInput) // Custom input mode
+
+	// Determine if scroll area should capture keyboard input
+	const isScrollAreaActive: boolean =
+		manualFocus === "scroll" ? true : manualFocus === "input" ? false : Boolean(showApprovalPrompt)
+
+	// Determine if input area is active (for visual focus indicator)
+	const isInputAreaActive: boolean =
+		manualFocus === "input" ? true : manualFocus === "scroll" ? false : !showApprovalPrompt
+
+	// Reset manual focus when view changes (e.g., agent starts responding)
+	useEffect(() => {
+		if (!canToggleFocus) {
+			setManualFocus(null)
+		}
+	}, [canToggleFocus])
+
 	// Display all messages including partial (streaming) ones
-	// The store handles deduplication by ID, so partial messages get updated in place
 	const displayMessages = useMemo(() => {
 		return messages
 	}, [messages])
+
+	// Scroll to bottom when new messages arrive (if auto-scroll is enabled)
+	const prevMessageCount = useRef(messages.length)
+	useEffect(() => {
+		if (messages.length > prevMessageCount.current && scrollState.isAtBottom) {
+			scrollToBottom()
+		}
+		prevMessageCount.current = messages.length
+	}, [messages.length, scrollState.isAtBottom, scrollToBottom])
+
+	// Handle scroll state changes from ScrollArea
+	const handleScroll = useCallback((scrollTop: number, maxScroll: number, isAtBottom: boolean) => {
+		setScrollState({ scrollTop, maxScroll, isAtBottom })
+	}, [])
 
 	// Cleanup function
 	const cleanup = useCallback(async () => {
@@ -177,13 +262,48 @@ export function App({
 		}
 	}, [])
 
-	// Handle Ctrl+C - close file picker first, then require double press to exit
-	// Using useInput to capture in raw mode (Ink intercepts SIGINT)
+	// File search handler for the file trigger
+	const handleFileSearch = useCallback((query: string) => {
+		if (!hostRef.current) return
+		hostRef.current.sendToExtension({
+			type: "searchFiles",
+			query,
+		})
+	}, [])
+
+	// Create autocomplete triggers
+	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult)
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const autocompleteTriggers = useMemo((): AutocompleteTrigger<any>[] => {
+		const fileTrigger = createFileTrigger({
+			onSearch: handleFileSearch,
+			getResults: () => fileSearchResults.map(toFileResult),
+		})
+
+		const slashCommandTrigger = createSlashCommandTrigger({
+			getCommands: () => allSlashCommands.map(toSlashCommandResult),
+		})
+
+		return [fileTrigger, slashCommandTrigger]
+	}, [handleFileSearch, fileSearchResults, allSlashCommands])
+
+	// Handle Ctrl+C and Tab for focus switching
 	useInput((input, key) => {
+		// Tab to toggle focus between scroll area and input (only when input is available)
+		if (key.tab && canToggleFocus && !pickerState.isOpen) {
+			setManualFocus((prev) => {
+				if (prev === "scroll") return "input"
+				if (prev === "input") return "scroll"
+				return isScrollAreaActive ? "input" : "scroll"
+			})
+			return
+		}
+
 		if (key.ctrl && input === "c") {
-			// If file picker is open, close it first
-			if (isFilePickerOpen) {
-				clearFilePicker()
+			// If picker is open, close it first
+			if (pickerState.isOpen) {
+				autocompleteRef.current?.closePicker()
+				followupAutocompleteRef.current?.closePicker()
 				return
 			}
 
@@ -201,7 +321,6 @@ export function App({
 				pendingExit.current = true
 				setShowExitHint(true)
 
-				// Clear the hint and reset after 2 seconds
 				exitHintTimeout.current = setTimeout(() => {
 					pendingExit.current = false
 					setShowExitHint(false)
@@ -225,9 +344,6 @@ export function App({
 		(ts: number, say: SayType, text: string, partial: boolean) => {
 			const messageId = ts.toString()
 
-			// Filter out internal messages we don't want to display
-			// checkpoint_saved contains internal commit hashes
-			// api_req_started is verbose technical info
 			if (say === "checkpoint_saved") {
 				return
 			}
@@ -235,41 +351,33 @@ export function App({
 				return
 			}
 
-			// Skip user_feedback - we already display user messages via addMessage() in handleSubmit
-			// The extension echoes user input as user_feedback which would cause duplicates
 			if (say === "user_feedback") {
 				seenMessageIds.current.add(messageId)
 				return
 			}
 
-			// Skip the first "text" message - the extension echoes the user's prompt
-			// We already display the user's message, so skip this echo
 			if (say === "text" && !firstTextMessageSkipped.current) {
 				firstTextMessageSkipped.current = true
 				seenMessageIds.current.add(messageId)
 				return
 			}
 
-			// Skip if we've already processed this message ID (except for streaming updates)
 			if (seenMessageIds.current.has(messageId) && !partial) {
 				return
 			}
 
-			// Map say type to role
 			let role: TUIMessage["role"] = "assistant"
 			let toolName: string | undefined
 			let toolDisplayName: string | undefined
 			let toolDisplayOutput: string | undefined
 
 			if (say === "command_output") {
-				// command_output is plain text output from a bash command
 				role = "tool"
 				toolName = "execute_command"
 				toolDisplayName = "bash"
 				toolDisplayOutput = text
 			} else if (say === "tool") {
 				role = "tool"
-				// Try to parse tool info
 				try {
 					const toolInfo = JSON.parse(text)
 					toolName = toolInfo.tool
@@ -282,10 +390,8 @@ export function App({
 				role = "thinking"
 			}
 
-			// Track this message ID
 			seenMessageIds.current.add(messageId)
 
-			// For streaming updates, the store's addMessage handles updating existing messages by ID
 			addMessage({
 				id: messageId,
 				role,
@@ -305,39 +411,29 @@ export function App({
 		(ts: number, ask: AskType, text: string, partial: boolean) => {
 			const messageId = ts.toString()
 
-			// For partial messages, just return
 			if (partial) {
 				return
 			}
 
-			// Skip if we've already processed this ask (e.g., already approved/rejected)
 			if (seenMessageIds.current.has(messageId)) {
 				return
 			}
 
-			// command_output asks are for streaming command output, not for user approval
-			// They should NOT trigger a Y/N prompt
 			if (ask === "command_output") {
 				seenMessageIds.current.add(messageId)
 				return
 			}
 
-			// completion_result is handled via the "taskComplete" event, not as a pending ask
-			// It should show the text input for follow-up, not Y/N prompt
 			if (ask === "completion_result") {
-				// Mark task as complete - user can type follow-up
 				seenMessageIds.current.add(messageId)
 				setComplete(true)
 				setLoading(false)
 				return
 			}
 
-			// In non-interactive mode, auto-approval is handled by extension settings
 			if (nonInteractive && ask !== "followup") {
-				// Show the action being taken
 				seenMessageIds.current.add(messageId)
 
-				// For tool asks, parse and format nicely
 				if (ask === "tool") {
 					let toolName: string | undefined
 					let toolDisplayName: string | undefined
@@ -374,7 +470,6 @@ export function App({
 				return
 			}
 
-			// Parse suggestions for followup questions and format tool asks
 			let suggestions: Array<{ answer: string; mode?: string | null }> | undefined
 			let questionText = text
 
@@ -387,7 +482,6 @@ export function App({
 					// Use raw text
 				}
 			} else if (ask === "tool") {
-				// Parse tool JSON and format nicely
 				try {
 					const toolInfo = JSON.parse(text) as Record<string, unknown>
 					questionText = formatToolAskMessage(toolInfo)
@@ -396,10 +490,8 @@ export function App({
 				}
 			}
 
-			// Mark as seen BEFORE setting pendingAsk to prevent re-processing
 			seenMessageIds.current.add(messageId)
 
-			// Set pending ask to show approval prompt
 			setPendingAsk({
 				id: messageId,
 				type: ask,
@@ -453,15 +545,26 @@ export function App({
 					handleAskMessage(ts, ask, text, partial)
 				}
 			} else if (msg.type === "fileSearchResults") {
-				// Handle file search results from extension
 				const results = (msg.results as FileSearchResult[]) || []
 				setFileSearchResults(results)
-				if (results.length > 0) {
-					setFilePickerOpen(true)
-				}
+			} else if (msg.type === "commands") {
+				const commands =
+					(msg.commands as Array<{
+						name: string
+						description?: string
+						argumentHint?: string
+						source: "global" | "project" | "built-in"
+					}>) || []
+				const slashCommands: SlashCommandResult[] = commands.map((cmd) => ({
+					name: cmd.name,
+					description: cmd.description,
+					argumentHint: cmd.argumentHint,
+					source: cmd.source,
+				}))
+				setAllSlashCommands(slashCommands)
 			}
 		},
-		[handleSayMessage, handleAskMessage, setFileSearchResults, setFilePickerOpen],
+		[handleSayMessage, handleAskMessage, setFileSearchResults, setAllSlashCommands],
 	)
 
 	// Initialize extension host
@@ -479,15 +582,13 @@ export function App({
 					verbose: debug,
 					quiet: !verbose && !debug,
 					nonInteractive,
-					disableOutput: true, // TUI mode - Ink handles all rendering
+					disableOutput: true,
 				})
 
 				hostRef.current = host
 
-				// Listen for extension messages
 				host.on("extensionWebviewMessage", handleExtensionMessage)
 
-				// Listen for task completion
 				host.on("taskComplete", async () => {
 					setComplete(true)
 					setLoading(false)
@@ -498,21 +599,20 @@ export function App({
 					}
 				})
 
-				// Listen for errors
 				host.on("taskError", (err: string) => {
 					setError(err)
 					setLoading(false)
 				})
 
-				// Activate the extension
 				await host.activate()
+
+				host.sendToExtension({ type: "requestCommands" })
+
 				setLoading(false)
 
-				// Only run task automatically if we have an initial prompt
 				if (initialPrompt) {
 					setHasStartedTask(true)
 					setLoading(true)
-					// Add user message for the initial prompt
 					addMessage({
 						id: randomUUID(),
 						role: "user",
@@ -540,20 +640,17 @@ export function App({
 
 			const trimmedText = text.trim()
 
-			// Guard: don't submit the special "__CUSTOM__" value from Select
 			if (trimmedText === "__CUSTOM__") {
 				return
 			}
 
 			if (pendingAsk) {
-				// Add user message to chat history
 				addMessage({
 					id: randomUUID(),
 					role: "user",
 					content: trimmedText,
 				})
 
-				// Send as response to ask
 				hostRef.current.sendToExtension({
 					type: "askResponse",
 					askResponse: "messageResponse",
@@ -562,13 +659,11 @@ export function App({
 				setPendingAsk(null)
 				setShowCustomInput(false)
 				isTransitioningToCustomInput.current = false
-				setLoading(true) // Show "Thinking" while waiting for response
+				setLoading(true)
 			} else if (!hasStartedTask) {
-				// First message - start a new task
 				setHasStartedTask(true)
 				setLoading(true)
 
-				// Add user message
 				addMessage({
 					id: randomUUID(),
 					role: "user",
@@ -582,7 +677,6 @@ export function App({
 					setLoading(false)
 				}
 			} else {
-				// Send as follow-up message (resume task if it was complete)
 				if (isComplete) {
 					setComplete(false)
 				}
@@ -623,7 +717,7 @@ export function App({
 			askResponse: "yesButtonClicked",
 		})
 		setPendingAsk(null)
-		setLoading(true) // Show "Thinking" while waiting for response
+		setLoading(true)
 	}, [setPendingAsk, setLoading])
 
 	// Handle rejection (N key)
@@ -635,7 +729,7 @@ export function App({
 			askResponse: "noButtonClicked",
 		})
 		setPendingAsk(null)
-		setLoading(true) // Show "Thinking" while waiting for response
+		setLoading(true)
 	}, [setPendingAsk, setLoading])
 
 	// Handle Y/N input for approval prompts
@@ -650,28 +744,30 @@ export function App({
 		}
 	})
 
-	// File picker handlers
-	const handleFileSearch = useCallback((query: string) => {
-		if (!hostRef.current) return
-		// Send searchFiles message to extension
-		hostRef.current.sendToExtension({
-			type: "searchFiles",
-			query,
-		})
+	// Handle picker state changes from AutocompleteInput
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const handlePickerStateChange = useCallback((state: AutocompletePickerState<any>) => {
+		setPickerState(state)
 	}, [])
 
-	const handleFileSelect = useCallback(
-		(_result: FileSearchResult) => {
-			// File selection is handled by FilePickerInput.
-			// It will update the text input directly.
-			clearFilePicker()
-		},
-		[clearFilePicker],
-	)
+	// Handle item selection from external PickerSelect
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const handlePickerSelect = useCallback((item: any) => {
+		autocompleteRef.current?.handleItemSelect(item)
+		followupAutocompleteRef.current?.handleItemSelect(item)
+	}, [])
 
-	const handleFilePickerClose = useCallback(() => {
-		clearFilePicker()
-	}, [clearFilePicker])
+	// Handle picker close from external PickerSelect
+	const handlePickerClose = useCallback(() => {
+		autocompleteRef.current?.closePicker()
+		followupAutocompleteRef.current?.closePicker()
+	}, [])
+
+	// Handle picker index change from external PickerSelect
+	const handlePickerIndexChange = useCallback((index: number) => {
+		autocompleteRef.current?.handleIndexChange(index)
+		followupAutocompleteRef.current?.handleIndexChange(index)
+	}, [])
 
 	// Error display
 	if (error) {
@@ -687,169 +783,187 @@ export function App({
 		)
 	}
 
-	// Status bar message - shows exit hint or default text
+	// Status bar content
 	const statusBarMessage = showExitHint ? (
 		<Text color="yellow">Press Ctrl+C again to exit</Text>
-	) : (
-		<Text color={theme.dimText}>↑↓ history • ? for shortcuts</Text>
-	)
+	) : isLoading ? (
+		<Box>
+			<LoadingText>{view === "ToolUse" ? "Using tool" : "Thinking"}</LoadingText>
+			{isScrollAreaActive && (
+				<>
+					<Text color={theme.dimText}> • </Text>
+					<ScrollIndicator
+						scrollTop={scrollState.scrollTop}
+						maxScroll={scrollState.maxScroll}
+						isScrollFocused={true}
+					/>
+				</>
+			)}
+		</Box>
+	) : isScrollAreaActive ? (
+		<ScrollIndicator scrollTop={scrollState.scrollTop} maxScroll={scrollState.maxScroll} isScrollFocused={true} />
+	) : null
+
+	// Get render function for picker items based on active trigger
+	const getPickerRenderItem = () => {
+		if (pickerState.activeTrigger) {
+			return pickerState.activeTrigger.renderItem
+		}
+		// Default render
+		return (item: FileResult | SlashCommandItem, isSelected: boolean) => (
+			<Box paddingLeft={2}>
+				<Text color={isSelected ? "cyan" : undefined}>{item.key}</Text>
+			</Box>
+		)
+	}
 
 	return (
-		<Box flexDirection="column">
-			{/* Header with ASCII art */}
-			<Header model={model} mode={mode} cwd={workspacePath} reasoningEffort={reasoningEffort} />
+		<Box flexDirection="column" height={rows - 1}>
+			{/* Header - fixed size */}
+			<Box flexShrink={0}>
+				<Header
+					model={model}
+					mode={mode}
+					cwd={workspacePath}
+					reasoningEffort={reasoningEffort}
+					version={version}
+				/>
+			</Box>
 
-			{/* Message history - render all completed messages */}
-			{displayMessages.map((message) => (
-				<ChatHistoryItem key={message.id} message={message} />
-			))}
+			{/* Scrollable message history area - fills remaining space via flexGrow */}
+			<ScrollArea
+				isActive={isScrollAreaActive}
+				onScroll={handleScroll}
+				scrollToBottomTrigger={scrollToBottomTrigger}>
+				{displayMessages.map((message) => (
+					<ChatHistoryItem key={message.id} message={message} />
+				))}
+			</ScrollArea>
 
-			{/* Input area - with borders like Claude Code */}
-			<Box flexDirection="column" marginTop={1}>
-				{view === "UserInput" ? (
-					pendingAsk?.type === "followup" ? (
-						<Box flexDirection="column">
-							<Text color={theme.rooHeader}>{pendingAsk.content}</Text>
-							{pendingAsk.suggestions && pendingAsk.suggestions.length > 0 && !showCustomInput ? (
-								<Box flexDirection="column" marginTop={1}>
-									<HorizontalLine />
-									<Select
-										options={[
-											...pendingAsk.suggestions.map((s) => ({
-												label: s.answer,
-												value: s.answer,
-											})),
-											{ label: "Type something...", value: "__CUSTOM__" },
-										]}
-										onChange={(value) => {
-											// Guard: Ignore empty, undefined, or invalid values
-											if (!value || typeof value !== "string") return
+			{/* Input area - with borders like Claude Code - fixed size */}
+			<Box flexDirection="column" flexShrink={0}>
+				{pendingAsk?.type === "followup" ? (
+					<Box flexDirection="column">
+						<Text color={theme.rooHeader}>{pendingAsk.content}</Text>
+						{pendingAsk.suggestions && pendingAsk.suggestions.length > 0 && !showCustomInput ? (
+							<Box flexDirection="column" marginTop={1}>
+								<HorizontalLine active={true} />
+								<Select
+									options={[
+										...pendingAsk.suggestions.map((s) => ({
+											label: s.answer,
+											value: s.answer,
+										})),
+										{ label: "Type something...", value: "__CUSTOM__" },
+									]}
+									onChange={(value) => {
+										if (!value || typeof value !== "string") return
+										if (showCustomInput || isTransitioningToCustomInput.current) return
 
-											// Guard: Ignore if we're already transitioning or showing custom input
-											if (showCustomInput || isTransitioningToCustomInput.current) return
-
-											if (value === "__CUSTOM__") {
-												// Don't send any response - just switch to text input mode
-												// Use ref to prevent race conditions during state update
-												isTransitioningToCustomInput.current = true
-												setShowCustomInput(true)
-											} else if (value.trim()) {
-												// Only submit valid non-empty values
-												handleSubmit(value)
-											}
-										}}
-									/>
-									<HorizontalLine />
-									<Text color={theme.dimText}>↑↓ navigate • Enter select</Text>
-								</Box>
-							) : (
-								<Box flexDirection="column" marginTop={1}>
-									<HorizontalLine />
-									<FilePickerInput
-										placeholder="Type your response..."
-										onSubmit={(text: string) => {
-											// Only submit if there's actual text
-											if (text && text.trim()) {
-												handleSubmit(text)
-												setShowCustomInput(false)
-												isTransitioningToCustomInput.current = false
-											}
-										}}
-										isActive={true}
-										onFileSearch={handleFileSearch}
-										onFileSelect={handleFileSelect}
-										onFilePickerClose={handleFilePickerClose}
-										fileSearchResults={fileSearchResults}
-										isFilePickerOpen={isFilePickerOpen}
-										filePickerSelectedIndex={filePickerSelectedIndex}
-										onFilePickerIndexChange={setFilePickerSelectedIndex}
-										prompt="> "
-									/>
-									<HorizontalLine />
-									{statusBarMessage}
-								</Box>
-							)}
-						</Box>
-					) : pendingAsk ? (
-						<Box flexDirection="column">
-							<Text color={theme.rooHeader}>{pendingAsk.content}</Text>
-							<Text color={theme.dimText}>
-								Press <Text color={theme.successColor}>Y</Text> to approve,{" "}
-								<Text color={theme.errorColor}>N</Text> to reject
-							</Text>
-						</Box>
-					) : isComplete ? (
-						<Box flexDirection="column">
-							<HorizontalLine />
-							<FilePickerInput
-								placeholder="Type to continue..."
-								onSubmit={handleSubmit}
-								isActive={view === "UserInput"}
-								onFileSearch={handleFileSearch}
-								onFileSelect={handleFileSelect}
-								onFilePickerClose={handleFilePickerClose}
-								fileSearchResults={fileSearchResults}
-								isFilePickerOpen={isFilePickerOpen}
-								filePickerSelectedIndex={filePickerSelectedIndex}
-								onFilePickerIndexChange={setFilePickerSelectedIndex}
-								prompt="> "
-							/>
-							<HorizontalLine />
-							{!isFilePickerOpen && statusBarMessage}
-							{isFilePickerOpen && (
-								<FilePickerSelect
-									results={fileSearchResults}
-									selectedIndex={filePickerSelectedIndex}
-									maxVisible={10}
-									onSelect={handleFileSelect}
-									onEscape={handleFilePickerClose}
-									onIndexChange={setFilePickerSelectedIndex}
-									isActive={view === "UserInput" && isFilePickerOpen}
+										if (value === "__CUSTOM__") {
+											isTransitioningToCustomInput.current = true
+											setShowCustomInput(true)
+										} else if (value.trim()) {
+											handleSubmit(value)
+										}
+									}}
 								/>
-							)}
-						</Box>
-					) : (
-						<Box flexDirection="column">
-							<HorizontalLine />
-							<FilePickerInput
-								placeholder=""
-								onSubmit={handleSubmit}
-								isActive={view === "UserInput"}
-								onFileSearch={handleFileSearch}
-								onFileSelect={handleFileSelect}
-								onFilePickerClose={handleFilePickerClose}
-								fileSearchResults={fileSearchResults}
-								isFilePickerOpen={isFilePickerOpen}
-								filePickerSelectedIndex={filePickerSelectedIndex}
-								onFilePickerIndexChange={setFilePickerSelectedIndex}
-								prompt="› "
-							/>
-							<HorizontalLine />
-							{!isFilePickerOpen && statusBarMessage}
-							{isFilePickerOpen && (
-								<FilePickerSelect
-									results={fileSearchResults}
-									selectedIndex={filePickerSelectedIndex}
-									maxVisible={10}
-									onSelect={handleFileSelect}
-									onEscape={handleFilePickerClose}
-									onIndexChange={setFilePickerSelectedIndex}
-									isActive={view === "UserInput" && isFilePickerOpen}
+								<HorizontalLine active={true} />
+								<Text color={theme.dimText}>↑↓ navigate • Enter select</Text>
+							</Box>
+						) : (
+							<Box flexDirection="column" marginTop={1}>
+								<HorizontalLine active={isInputAreaActive} />
+								<AutocompleteInput
+									ref={followupAutocompleteRef}
+									placeholder="Type your response..."
+									onSubmit={(text: string) => {
+										if (text && text.trim()) {
+											handleSubmit(text)
+											setShowCustomInput(false)
+											isTransitioningToCustomInput.current = false
+										}
+									}}
+									isActive={true}
+									triggers={autocompleteTriggers}
+									onPickerStateChange={handlePickerStateChange}
+									prompt="> "
 								/>
-							)}
-						</Box>
-					)
-				) : view === "ToolUse" ? (
-					<Box paddingX={1}>
-						<LoadingText>Using tool</LoadingText>
+								<HorizontalLine active={isInputAreaActive} />
+								{pickerState.isOpen ? (
+									<Box flexDirection="column" height={PICKER_HEIGHT}>
+										<PickerSelect
+											results={pickerState.results}
+											selectedIndex={pickerState.selectedIndex}
+											maxVisible={PICKER_HEIGHT - 1}
+											onSelect={handlePickerSelect}
+											onEscape={handlePickerClose}
+											onIndexChange={handlePickerIndexChange}
+											renderItem={getPickerRenderItem()}
+											emptyMessage={pickerState.activeTrigger?.emptyMessage}
+											isActive={isInputAreaActive && pickerState.isOpen}
+										/>
+									</Box>
+								) : (
+									<Box height={1}>{statusBarMessage}</Box>
+								)}
+							</Box>
+						)}
+					</Box>
+				) : showApprovalPrompt ? (
+					<Box flexDirection="column">
+						<Text color={theme.rooHeader}>{pendingAsk?.content}</Text>
+						<Text color={theme.dimText}>
+							Press <Text color={theme.successColor}>Y</Text> to approve,{" "}
+							<Text color={theme.errorColor}>N</Text> to reject
+						</Text>
+						<Box height={1}>{statusBarMessage}</Box>
 					</Box>
 				) : (
-					<Box paddingX={1}>
-						<LoadingText>Thinking</LoadingText>
+					<Box flexDirection="column">
+						<HorizontalLine active={isInputAreaActive} />
+						<AutocompleteInput
+							ref={autocompleteRef}
+							placeholder={isComplete ? "Type to continue..." : ""}
+							onSubmit={handleSubmit}
+							isActive={isInputAreaActive}
+							triggers={autocompleteTriggers}
+							onPickerStateChange={handlePickerStateChange}
+							prompt="› "
+						/>
+						<HorizontalLine active={isInputAreaActive} />
+						{pickerState.isOpen ? (
+							<Box flexDirection="column" height={PICKER_HEIGHT}>
+								<PickerSelect
+									results={pickerState.results}
+									selectedIndex={pickerState.selectedIndex}
+									maxVisible={PICKER_HEIGHT - 1}
+									onSelect={handlePickerSelect}
+									onEscape={handlePickerClose}
+									onIndexChange={handlePickerIndexChange}
+									renderItem={getPickerRenderItem()}
+									emptyMessage={pickerState.activeTrigger?.emptyMessage}
+									isActive={isInputAreaActive && pickerState.isOpen}
+								/>
+							</Box>
+						) : (
+							<Box height={1}>{statusBarMessage}</Box>
+						)}
 					</Box>
 				)}
 			</Box>
 		</Box>
+	)
+}
+
+/**
+ * Main TUI Application Component - wraps with TerminalSizeProvider
+ */
+export function App(props: TUIAppProps) {
+	return (
+		<TerminalSizeProvider>
+			<AppInner {...props} />
+		</TerminalSizeProvider>
 	)
 }
 
@@ -859,7 +973,6 @@ export function App({
 function formatToolOutput(toolInfo: Record<string, unknown>): string {
 	const toolName = (toolInfo.tool as string) || "unknown"
 
-	// Handle specific tool types with friendly formatting
 	switch (toolName) {
 		case "switchMode": {
 			const mode = (toolInfo.mode as string) || "unknown"
@@ -935,7 +1048,6 @@ function formatToolOutput(toolInfo: Record<string, unknown>): string {
 		}
 
 		default: {
-			// Generic formatting - show params without the tool name (it's in the header)
 			const params = Object.entries(toolInfo)
 				.filter(([key]) => key !== "tool")
 				.map(([key, value]) => {
@@ -955,7 +1067,6 @@ function formatToolOutput(toolInfo: Record<string, unknown>): string {
 function formatToolAskMessage(toolInfo: Record<string, unknown>): string {
 	const toolName = (toolInfo.tool as string) || "unknown"
 
-	// Handle specific tool types with nice formatting for approval prompts
 	switch (toolName) {
 		case "switchMode":
 		case "switch_mode": {
@@ -995,7 +1106,6 @@ function formatToolAskMessage(toolInfo: Record<string, unknown>): string {
 		}
 
 		default: {
-			// Generic formatting for other tools
 			const params = Object.entries(toolInfo)
 				.filter(([key]) => key !== "tool")
 				.map(([key, value]) => {

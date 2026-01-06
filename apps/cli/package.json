@@ -24,6 +24,7 @@
 		"@roo-code/vscode-shim": "workspace:^",
 		"@vscode/ripgrep": "^1.15.9",
 		"commander": "^12.1.0",
+		"fuzzysort": "^3.1.0",
 		"ink": "^6.6.0",
 		"react": "^19.1.0",
 		"zustand": "^5.0.0"
