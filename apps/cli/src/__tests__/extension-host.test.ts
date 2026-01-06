@@ -1161,4 +1161,113 @@ describe("ExtensionHost", () => {
 			vi.useRealTimers()
 		})
 	})
+
+	describe("handleStateMessage - mode change detection", () => {
+		let host: ExtensionHost
+		let sendToExtensionSpy: ReturnType<typeof vi.spyOn>
+
+		beforeEach(() => {
+			host = createTestHost({
+				mode: "code",
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+			// Mock process.stdout.write which is used by output()
+			vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+			sendToExtensionSpy = vi.spyOn(host, "sendToExtension")
+		})
+
+		afterEach(() => {
+			vi.restoreAllMocks()
+		})
+
+		it("should re-apply API configuration when mode changes in state", () => {
+			// First state update establishes current mode
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
+			sendToExtensionSpy.mockClear()
+
+			// Second state update with different mode should trigger re-apply
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
+
+			// Should have sent updateSettings with the API configuration
+			expect(sendToExtensionSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "updateSettings",
+					updatedSettings: expect.objectContaining({
+						apiProvider: "anthropic",
+						apiKey: "test-key",
+						apiModelId: "test-model",
+					}),
+				}),
+			)
+		})
+
+		it("should not re-apply API configuration when mode stays the same", () => {
+			// First state update establishes current mode
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
+			sendToExtensionSpy.mockClear()
+
+			// Second state update with same mode should not trigger re-apply
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
+
+			// Should not have sent updateSettings
+			expect(sendToExtensionSpy).not.toHaveBeenCalled()
+		})
+
+		it("should re-apply API configuration without apiKey when mode changes", () => {
+			// Create host without apiKey - API configuration should still be sent
+			// to preserve provider/model settings across mode switches
+			const hostNoKey = createTestHost({
+				mode: "code",
+				apiProvider: "anthropic",
+				model: "test-model",
+			})
+			const sendSpy = vi.spyOn(hostNoKey, "sendToExtension")
+
+			// First state update establishes current mode
+			callPrivate(hostNoKey, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
+			sendSpy.mockClear()
+
+			// Second state update with different mode
+			callPrivate(hostNoKey, "handleStateMessage", {
+				type: "state",
+				state: { mode: "architect", clineMessages: [] },
+			})
+
+			// Should have sent updateSettings with provider and model (but no apiKey)
+			expect(sendSpy).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "updateSettings",
+					updatedSettings: expect.objectContaining({
+						apiProvider: "anthropic",
+						apiModelId: "test-model",
+					}),
+				}),
+			)
+			// Verify apiKey is NOT in the config
+			const call = sendSpy.mock.calls[0]?.[0] as { updatedSettings: { apiKey?: string } } | undefined
+			expect(call?.updatedSettings.apiKey).toBeUndefined()
+		})
+
+		it("should track current mode across multiple changes", () => {
+			// Start with code mode
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
+			sendToExtensionSpy.mockClear()
+
+			// Change to architect
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
+			expect(sendToExtensionSpy).toHaveBeenCalledTimes(1)
+			sendToExtensionSpy.mockClear()
+
+			// Change to debug
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "debug", clineMessages: [] } })
+			expect(sendToExtensionSpy).toHaveBeenCalledTimes(1)
+			sendToExtensionSpy.mockClear()
+
+			// Stay on debug
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "debug", clineMessages: [] } })
+			expect(sendToExtensionSpy).not.toHaveBeenCalled()
+		})
+	})
 })

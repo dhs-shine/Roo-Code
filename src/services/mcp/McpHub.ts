@@ -1916,16 +1916,16 @@ export class McpHub {
 	async dispose(): Promise<void> {
 		// Prevent multiple disposals
 		if (this.isDisposed) {
-			console.log("McpHub: Already disposed.")
 			return
 		}
-		console.log("McpHub: Disposing...")
+
 		this.isDisposed = true
 
 		// Clear all debounce timers
 		for (const timer of this.configChangeDebounceTimers.values()) {
 			clearTimeout(timer)
 		}
+
 		this.configChangeDebounceTimers.clear()
 
 		// Clear flag reset timer and reset programmatic update flag
@@ -1933,9 +1933,10 @@ export class McpHub {
 			clearTimeout(this.flagResetTimer)
 			this.flagResetTimer = undefined
 		}
-		this.isProgrammaticUpdate = false
 
+		this.isProgrammaticUpdate = false
 		this.removeAllFileWatchers()
+
 		for (const connection of this.connections) {
 			try {
 				await this.deleteConnection(connection.server.name, connection.server.source)
@@ -1943,15 +1944,19 @@ export class McpHub {
 				console.error(`Failed to close connection for ${connection.server.name}:`, error)
 			}
 		}
+
 		this.connections = []
+
 		if (this.settingsWatcher) {
 			this.settingsWatcher.dispose()
 			this.settingsWatcher = undefined
 		}
+
 		if (this.projectMcpWatcher) {
 			this.projectMcpWatcher.dispose()
 			this.projectMcpWatcher = undefined
 		}
+
 		this.disposables.forEach((d) => d.dispose())
 	}
 }

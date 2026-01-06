@@ -21,4 +21,9 @@ export default defineConfig({
 		// Keep @vscode/ripgrep external - we bundle the binary separately
 		"@vscode/ripgrep",
 	],
+	esbuildOptions(options) {
+		// Enable JSX for React/Ink components
+		options.jsx = "automatic"
+		options.jsxImportSource = "react"
+	},
 })

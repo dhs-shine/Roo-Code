@@ -34,6 +34,11 @@ export interface ExtensionHostOptions {
 	verbose?: boolean
 	quiet?: boolean
 	nonInteractive?: boolean
+	/**
+	 * When true, completely disables all direct stdout/stderr output.
+	 * Use this when running in TUI mode where Ink controls the terminal.
+	 */
+	disableOutput?: boolean
 }
 
 interface ExtensionModule {
@@ -86,9 +91,14 @@ export class ExtensionHost extends EventEmitter {
 	// Track if we're currently streaming a message (to manage newlines)
 	private currentlyStreamingTs: number | null = null
 
+	// Track the current mode to detect mode changes
+	private currentMode: string | null = null
+
 	constructor(options: ExtensionHostOptions) {
 		super()
 		this.options = options
+		// Initialize currentMode from options to track mode changes
+		this.currentMode = options.mode || null
 	}
 
 	private log(...args: unknown[]): void {
@@ -333,12 +343,36 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	/**
+	 * Get API key from environment variable based on provider
+	 */
+	private getApiKeyFromEnv(provider: string): string | undefined {
+		const envVarMap: Record<string, string> = {
+			anthropic: "ANTHROPIC_API_KEY",
+			openai: "OPENAI_API_KEY",
+			"openai-native": "OPENAI_API_KEY",
+			openrouter: "OPENROUTER_API_KEY",
+			google: "GOOGLE_API_KEY",
+			gemini: "GOOGLE_API_KEY",
+			bedrock: "AWS_ACCESS_KEY_ID",
+			ollama: "OLLAMA_API_KEY",
+			mistral: "MISTRAL_API_KEY",
+			deepseek: "DEEPSEEK_API_KEY",
+			xai: "XAI_API_KEY",
+			groq: "GROQ_API_KEY",
+		}
+		const envVar = envVarMap[provider.toLowerCase()] || `${provider.toUpperCase().replace(/-/g, "_")}_API_KEY`
+		return process.env[envVar]
+	}
+
+	/**
 	 * Build the provider-specific API configuration
 	 * Each provider uses different field names for API key and model
+	 * Falls back to environment variables for API keys when not explicitly passed
 	 */
 	private buildApiConfiguration(): RooCodeSettings {
 		const provider = this.options.apiProvider || "anthropic"
-		const apiKey = this.options.apiKey
+		// Try explicit API key first, then fall back to environment variable
+		const apiKey = this.options.apiKey || this.getApiKeyFromEnv(provider)
 		const model = this.options.model
 
 		// Base config with provider.
@@ -530,7 +564,6 @@ export class ExtensionHost extends EventEmitter {
 				alwaysAllowSubtasks: true,
 				alwaysAllowExecute: true,
 				alwaysAllowFollowupQuestions: true,
-				// Allow all commands with wildcard (required for command auto-approval).
 				allowedCommands: ["*"],
 				commandExecutionTimeout: 20,
 			}
@@ -540,16 +573,21 @@ export class ExtensionHost extends EventEmitter {
 			await new Promise<void>((resolve) => setTimeout(resolve, 100))
 		} else {
 			this.log("Interactive mode: user will be prompted for approvals...")
-			const settings: RooCodeSettings = { autoApprovalEnabled: false }
+
+			const settings: RooCodeSettings = {
+				autoApprovalEnabled: false,
+			}
+
 			this.applyRuntimeSettings(settings)
 			this.sendToExtension({ type: "updateSettings", updatedSettings: settings })
 			await new Promise<void>((resolve) => setTimeout(resolve, 100))
 		}
 
-		if (this.options.apiKey) {
-			this.sendToExtension({ type: "updateSettings", updatedSettings: this.buildApiConfiguration() })
-			await new Promise<void>((resolve) => setTimeout(resolve, 100))
-		}
+		// Always send API configuration - it may include API key from environment variables
+		const apiConfig = this.buildApiConfiguration()
+		this.log("Sending initial API configuration:", JSON.stringify(apiConfig))
+		this.sendToExtension({ type: "updateSettings", updatedSettings: apiConfig })
+		await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
 		this.sendToExtension({ type: "newTask", text: prompt })
 		await this.waitForCompletion()
@@ -608,6 +646,10 @@ export class ExtensionHost extends EventEmitter {
 	 * Use this for all user-facing output instead of console.log
 	 */
 	private output(...args: unknown[]): void {
+		// In TUI mode, don't write directly to stdout - let Ink handle rendering
+		if (this.options.disableOutput) {
+			return
+		}
 		const text = args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
 		process.stdout.write(text + "\n")
 	}
@@ -617,6 +659,10 @@ export class ExtensionHost extends EventEmitter {
 	 * Use this for all user-facing errors instead of console.error
 	 */
 	private outputError(...args: unknown[]): void {
+		// In TUI mode, don't write directly to stderr - let Ink handle rendering
+		if (this.options.disableOutput) {
+			return
+		}
 		const text = args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
 		process.stderr.write(text + "\n")
 	}
@@ -627,6 +673,24 @@ export class ExtensionHost extends EventEmitter {
 	private handleStateMessage(msg: Record<string, unknown>): void {
 		const state = msg.state as Record<string, unknown> | undefined
 		if (!state) return
+
+		// Detect mode changes and re-apply API configuration
+		// This preserves the CLI-provided provider/model settings across mode switches
+		const newMode = state.mode as string | undefined
+		if (this.options.verbose) {
+			this.log(`State update: mode=${newMode}, currentMode=${this.currentMode}`)
+		}
+		if (newMode && this.currentMode !== null && this.currentMode !== newMode) {
+			const apiConfig = this.buildApiConfiguration()
+			this.log(`Mode changed from ${this.currentMode} to ${newMode}, re-applying API configuration...`)
+			if (this.options.verbose) {
+				this.log(`API config: ${JSON.stringify(apiConfig)}`)
+			}
+			this.sendToExtension({ type: "updateSettings", updatedSettings: apiConfig })
+		}
+		if (newMode) {
+			this.currentMode = newMode
+		}
 
 		const clineMessages = state.clineMessages as Array<Record<string, unknown>> | undefined
 
@@ -695,6 +759,10 @@ export class ExtensionHost extends EventEmitter {
 	 * Write streaming output directly to stdout (bypassing quiet mode if needed)
 	 */
 	private writeStream(text: string): void {
+		// In TUI mode, don't write directly to stdout - let Ink handle rendering
+		if (this.options.disableOutput) {
+			return
+		}
 		process.stdout.write(text)
 	}
 
@@ -890,6 +958,12 @@ export class ExtensionHost extends EventEmitter {
 			return
 		}
 
+		// In TUI mode (disableOutput), don't handle asks here - let the TUI handle them
+		// The TUI listens to the same extensionWebviewMessage events and renders its own UI
+		if (this.options.disableOutput) {
+			return
+		}
+
 		// Interactive mode - prompt user for input
 		this.handleAskMessageInteractive(ts, ask, text)
 	}
@@ -943,6 +1017,16 @@ export class ExtensionHost extends EventEmitter {
 								displayValue = String(value)
 							}
 							this.output(`  ${key}: ${displayValue}`)
+						}
+
+						// Proactively send API config when switchMode tool is detected
+						// This helps preserve provider/model settings across mode switches
+						if (toolName === "switchMode") {
+							this.log("switchMode tool detected, proactively sending API configuration...")
+							this.sendToExtension({
+								type: "updateSettings",
+								updatedSettings: this.buildApiConfiguration(),
+							})
 						}
 					} catch {
 						this.output("\n[tool]", text)
@@ -1328,6 +1412,8 @@ export class ExtensionHost extends EventEmitter {
 		try {
 			const approved = await this.promptForYesNo("Approve this action? (y/n): ")
 			this.sendApprovalResponse(approved)
+			// Note: Mode switch detection and API config re-application is handled in handleStateMessage
+			// This works for both interactive and non-interactive (auto-approved) modes
 		} catch {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
