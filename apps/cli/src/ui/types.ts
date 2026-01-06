@@ -1,9 +1,9 @@
+import type { ClineAsk, ClineSay } from "@roo-code/types"
+
 export type MessageRole = "system" | "user" | "assistant" | "tool" | "thinking"
 
-/**
- * Ask types that require user input.
- */
-export type AskType =
+export type AskType = Extract<
+	ClineAsk,
 	| "followup"
 	| "command"
 	| "command_output"
@@ -14,25 +14,23 @@ export type AskType =
 	| "resume_task"
 	| "resume_completed_task"
 	| "completion_result"
+>
 
-/**
- * Say types for display-only messages.
- */
 export type SayType =
-	| "text"
-	| "reasoning"
+	| Extract<
+			ClineSay,
+			| "text"
+			| "reasoning"
+			| "command_output"
+			| "completion_result"
+			| "error"
+			| "api_req_started"
+			| "user_feedback"
+			| "checkpoint_saved"
+	  >
 	| "thinking"
-	| "command_output"
-	| "completion_result"
-	| "error"
 	| "tool"
-	| "api_req_started"
-	| "user_feedback"
-	| "checkpoint_saved"
 
-/**
- * A message displayed in the TUI message list.
- */
 export interface TUIMessage {
 	id: string
 	role: MessageRole
@@ -45,9 +43,6 @@ export interface TUIMessage {
 	originalType?: SayType | AskType
 }
 
-/**
- * A pending ask that requires user response.
- */
 export interface PendingAsk {
 	id: string
 	type: AskType
@@ -71,3 +66,9 @@ export interface AppProps {
 }
 
 export type View = "UserInput" | "AgentResponse" | "ToolUse" | "Default"
+
+export interface FileSearchResult {
+	path: string
+	type: "file" | "folder"
+	label?: string
+}

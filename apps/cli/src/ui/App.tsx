@@ -8,10 +8,11 @@ import { useCLIStore } from "./store.js"
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
-import { HistoryTextInput } from "./components/HistoryTextInput.js"
+import { FilePickerInput } from "./components/FilePickerInput.js"
+import { FilePickerSelect } from "./components/FilePickerSelect.js"
 import { useTerminalSize } from "./hooks/useTerminalSize.js"
 import * as theme from "./utils/theme.js"
-import type { AppProps, TUIMessage, PendingAsk, SayType, AskType, View } from "./types.js"
+import type { AppProps, TUIMessage, PendingAsk, SayType, AskType, View, FileSearchResult } from "./types.js"
 
 /**
  * Interface for the extension host that the TUI interacts with
@@ -121,7 +122,6 @@ export function App({
 }: TUIAppProps) {
 	const { exit } = useApp()
 
-	// Zustand store
 	const {
 		messages,
 		pendingAsk,
@@ -135,6 +135,13 @@ export function App({
 		setComplete,
 		setHasStartedTask,
 		setError,
+		fileSearchResults,
+		isFilePickerOpen,
+		filePickerSelectedIndex,
+		setFileSearchResults,
+		setFilePickerOpen,
+		setFilePickerSelectedIndex,
+		clearFilePicker,
 	} = useCLIStore()
 
 	const hostRef = useRef<ExtensionHostInterface | null>(null)
@@ -170,10 +177,16 @@ export function App({
 		}
 	}, [])
 
-	// Handle Ctrl+C - require double press to exit
+	// Handle Ctrl+C - close file picker first, then require double press to exit
 	// Using useInput to capture in raw mode (Ink intercepts SIGINT)
 	useInput((input, key) => {
 		if (key.ctrl && input === "c") {
+			// If file picker is open, close it first
+			if (isFilePickerOpen) {
+				clearFilePicker()
+				return
+			}
+
 			if (pendingExit.current) {
 				// Second press - exit immediately
 				if (exitHintTimeout.current) {
@@ -439,9 +452,16 @@ export function App({
 				} else if (type === "ask" && ask) {
 					handleAskMessage(ts, ask, text, partial)
 				}
+			} else if (msg.type === "fileSearchResults") {
+				// Handle file search results from extension
+				const results = (msg.results as FileSearchResult[]) || []
+				setFileSearchResults(results)
+				if (results.length > 0) {
+					setFilePickerOpen(true)
+				}
 			}
 		},
-		[handleSayMessage, handleAskMessage],
+		[handleSayMessage, handleAskMessage, setFileSearchResults, setFilePickerOpen],
 	)
 
 	// Initialize extension host
@@ -630,6 +650,29 @@ export function App({
 		}
 	})
 
+	// File picker handlers
+	const handleFileSearch = useCallback((query: string) => {
+		if (!hostRef.current) return
+		// Send searchFiles message to extension
+		hostRef.current.sendToExtension({
+			type: "searchFiles",
+			query,
+		})
+	}, [])
+
+	const handleFileSelect = useCallback(
+		(_result: FileSearchResult) => {
+			// File selection is handled by FilePickerInput.
+			// It will update the text input directly.
+			clearFilePicker()
+		},
+		[clearFilePicker],
+	)
+
+	const handleFilePickerClose = useCallback(() => {
+		clearFilePicker()
+	}, [clearFilePicker])
+
 	// Error display
 	if (error) {
 		return (
@@ -734,28 +777,64 @@ export function App({
 							<HorizontalLine />
 							<Box>
 								<Text color={theme.promptColor}>&gt; </Text>
-								<HistoryTextInput
+								<FilePickerInput
 									placeholder="Type to continue..."
 									onSubmit={handleSubmit}
 									isActive={view === "UserInput"}
+									onFileSearch={handleFileSearch}
+									onFileSelect={handleFileSelect}
+									onFilePickerClose={handleFilePickerClose}
+									fileSearchResults={fileSearchResults}
+									isFilePickerOpen={isFilePickerOpen}
+									filePickerSelectedIndex={filePickerSelectedIndex}
+									onFilePickerIndexChange={setFilePickerSelectedIndex}
 								/>
 							</Box>
 							<HorizontalLine />
-							{statusBarMessage}
+							{!isFilePickerOpen && statusBarMessage}
+							{isFilePickerOpen && (
+								<FilePickerSelect
+									results={fileSearchResults}
+									selectedIndex={filePickerSelectedIndex}
+									maxVisible={10}
+									onSelect={handleFileSelect}
+									onEscape={handleFilePickerClose}
+									onIndexChange={setFilePickerSelectedIndex}
+									isActive={view === "UserInput" && isFilePickerOpen}
+								/>
+							)}
 						</Box>
 					) : (
 						<Box flexDirection="column">
 							<HorizontalLine />
 							<Box>
 								<Text color={theme.promptColor}>› </Text>
-								<HistoryTextInput
+								<FilePickerInput
 									placeholder=""
 									onSubmit={handleSubmit}
 									isActive={view === "UserInput"}
+									onFileSearch={handleFileSearch}
+									onFileSelect={handleFileSelect}
+									onFilePickerClose={handleFilePickerClose}
+									fileSearchResults={fileSearchResults}
+									isFilePickerOpen={isFilePickerOpen}
+									filePickerSelectedIndex={filePickerSelectedIndex}
+									onFilePickerIndexChange={setFilePickerSelectedIndex}
 								/>
 							</Box>
 							<HorizontalLine />
-							{statusBarMessage}
+							{!isFilePickerOpen && statusBarMessage}
+							{isFilePickerOpen && (
+								<FilePickerSelect
+									results={fileSearchResults}
+									selectedIndex={filePickerSelectedIndex}
+									maxVisible={10}
+									onSelect={handleFileSelect}
+									onEscape={handleFilePickerClose}
+									onIndexChange={setFilePickerSelectedIndex}
+									isActive={view === "UserInput" && isFilePickerOpen}
+								/>
+							)}
 						</Box>
 					)
 				) : view === "ToolUse" ? (

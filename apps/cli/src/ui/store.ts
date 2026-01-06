@@ -1,6 +1,6 @@
 import { create } from "zustand"
 
-import type { TUIMessage, PendingAsk } from "./types.js"
+import type { TUIMessage, PendingAsk, FileSearchResult } from "./types.js"
 
 interface CLIState {
 	messages: TUIMessage[]
@@ -9,6 +9,10 @@ interface CLIState {
 	isComplete: boolean
 	hasStartedTask: boolean
 	error: string | null
+	fileSearchResults: FileSearchResult[]
+	isFilePickerOpen: boolean
+	filePickerQuery: string
+	filePickerSelectedIndex: number
 }
 
 interface CLIActions {
@@ -20,6 +24,11 @@ interface CLIActions {
 	setHasStartedTask: (started: boolean) => void
 	setError: (error: string | null) => void
 	reset: () => void
+	setFileSearchResults: (results: FileSearchResult[]) => void
+	setFilePickerOpen: (open: boolean) => void
+	setFilePickerQuery: (query: string) => void
+	setFilePickerSelectedIndex: (index: number) => void
+	clearFilePicker: () => void
 }
 
 const initialState: CLIState = {
@@ -29,6 +38,10 @@ const initialState: CLIState = {
 	isComplete: false,
 	hasStartedTask: false,
 	error: null,
+	fileSearchResults: [],
+	isFilePickerOpen: false,
+	filePickerQuery: "",
+	filePickerSelectedIndex: 0,
 }
 
 export const useCLIStore = create<CLIState & CLIActions>((set) => ({
@@ -81,4 +94,15 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	setHasStartedTask: (started) => set({ hasStartedTask: started }),
 	setError: (error) => set({ error }),
 	reset: () => set(initialState),
+	setFileSearchResults: (results) => set({ fileSearchResults: results, filePickerSelectedIndex: 0 }),
+	setFilePickerOpen: (open) => set({ isFilePickerOpen: open }),
+	setFilePickerQuery: (query) => set({ filePickerQuery: query }),
+	setFilePickerSelectedIndex: (index) => set({ filePickerSelectedIndex: index }),
+	clearFilePicker: () =>
+		set({
+			fileSearchResults: [],
+			isFilePickerOpen: false,
+			filePickerQuery: "",
+			filePickerSelectedIndex: 0,
+		}),
 }))
