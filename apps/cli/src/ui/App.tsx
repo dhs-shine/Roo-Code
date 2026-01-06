@@ -1,5 +1,5 @@
 import { Box, Text, useApp, useInput } from "ink"
-import { TextInput, Select } from "@inkjs/ui"
+import { Select } from "@inkjs/ui"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { EventEmitter } from "events"
 import { randomUUID } from "crypto"
@@ -745,20 +745,26 @@ export function App({
 							) : (
 								<Box flexDirection="column" marginTop={1}>
 									<HorizontalLine />
-									<Box>
-										<Text color={theme.promptColor}>&gt; </Text>
-										<TextInput
-											placeholder="Type your response..."
-											onSubmit={(text) => {
-												// Only submit if there's actual text
-												if (text && text.trim()) {
-													handleSubmit(text)
-													setShowCustomInput(false)
-													isTransitioningToCustomInput.current = false
-												}
-											}}
-										/>
-									</Box>
+									<FilePickerInput
+										placeholder="Type your response..."
+										onSubmit={(text: string) => {
+											// Only submit if there's actual text
+											if (text && text.trim()) {
+												handleSubmit(text)
+												setShowCustomInput(false)
+												isTransitioningToCustomInput.current = false
+											}
+										}}
+										isActive={true}
+										onFileSearch={handleFileSearch}
+										onFileSelect={handleFileSelect}
+										onFilePickerClose={handleFilePickerClose}
+										fileSearchResults={fileSearchResults}
+										isFilePickerOpen={isFilePickerOpen}
+										filePickerSelectedIndex={filePickerSelectedIndex}
+										onFilePickerIndexChange={setFilePickerSelectedIndex}
+										prompt="> "
+									/>
 									<HorizontalLine />
 									{statusBarMessage}
 								</Box>
@@ -775,21 +781,19 @@ export function App({
 					) : isComplete ? (
 						<Box flexDirection="column">
 							<HorizontalLine />
-							<Box>
-								<Text color={theme.promptColor}>&gt; </Text>
-								<FilePickerInput
-									placeholder="Type to continue..."
-									onSubmit={handleSubmit}
-									isActive={view === "UserInput"}
-									onFileSearch={handleFileSearch}
-									onFileSelect={handleFileSelect}
-									onFilePickerClose={handleFilePickerClose}
-									fileSearchResults={fileSearchResults}
-									isFilePickerOpen={isFilePickerOpen}
-									filePickerSelectedIndex={filePickerSelectedIndex}
-									onFilePickerIndexChange={setFilePickerSelectedIndex}
-								/>
-							</Box>
+							<FilePickerInput
+								placeholder="Type to continue..."
+								onSubmit={handleSubmit}
+								isActive={view === "UserInput"}
+								onFileSearch={handleFileSearch}
+								onFileSelect={handleFileSelect}
+								onFilePickerClose={handleFilePickerClose}
+								fileSearchResults={fileSearchResults}
+								isFilePickerOpen={isFilePickerOpen}
+								filePickerSelectedIndex={filePickerSelectedIndex}
+								onFilePickerIndexChange={setFilePickerSelectedIndex}
+								prompt="> "
+							/>
 							<HorizontalLine />
 							{!isFilePickerOpen && statusBarMessage}
 							{isFilePickerOpen && (
@@ -807,21 +811,19 @@ export function App({
 					) : (
 						<Box flexDirection="column">
 							<HorizontalLine />
-							<Box>
-								<Text color={theme.promptColor}>› </Text>
-								<FilePickerInput
-									placeholder=""
-									onSubmit={handleSubmit}
-									isActive={view === "UserInput"}
-									onFileSearch={handleFileSearch}
-									onFileSelect={handleFileSelect}
-									onFilePickerClose={handleFilePickerClose}
-									fileSearchResults={fileSearchResults}
-									isFilePickerOpen={isFilePickerOpen}
-									filePickerSelectedIndex={filePickerSelectedIndex}
-									onFilePickerIndexChange={setFilePickerSelectedIndex}
-								/>
-							</Box>
+							<FilePickerInput
+								placeholder=""
+								onSubmit={handleSubmit}
+								isActive={view === "UserInput"}
+								onFileSearch={handleFileSearch}
+								onFileSelect={handleFileSelect}
+								onFilePickerClose={handleFilePickerClose}
+								fileSearchResults={fileSearchResults}
+								isFilePickerOpen={isFilePickerOpen}
+								filePickerSelectedIndex={filePickerSelectedIndex}
+								onFilePickerIndexChange={setFilePickerSelectedIndex}
+								prompt="› "
+							/>
 							<HorizontalLine />
 							{!isFilePickerOpen && statusBarMessage}
 							{isFilePickerOpen && (

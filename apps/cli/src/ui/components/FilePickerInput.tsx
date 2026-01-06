@@ -1,7 +1,7 @@
 import { useInput } from "ink"
-import { TextInput } from "@inkjs/ui"
 import { useState, useCallback, useEffect, useRef } from "react"
 
+import { MultilineTextInput } from "./MultilineTextInput.js"
 import { useInputHistory } from "../hooks/useInputHistory.js"
 import type { FileSearchResult } from "../types.js"
 
@@ -16,6 +16,14 @@ export interface FilePickerInputProps {
 	onFileSelect: (result: FileSearchResult) => void
 	onFilePickerClose: () => void
 	onFilePickerIndexChange: (index: number) => void
+	/**
+	 * Prompt character for the first line (default: "> ")
+	 */
+	prompt?: string
+	/**
+	 * Indent string for continuation lines (default: "  ")
+	 */
+	continuationIndent?: string
 }
 
 const SEARCH_DEBOUNCE_MS = 150
@@ -29,39 +37,38 @@ export function FilePickerInput({
 	isFilePickerOpen,
 	filePickerSelectedIndex,
 	onFilePickerClose,
+	prompt = "> ",
+	continuationIndent = "  ",
 }: FilePickerInputProps) {
-	const currentInputRef = useRef("")
 	const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 	const lastSearchQueryRef = useRef<string | null>(null)
 
-	const [inputKey, setInputKey] = useState(0)
-	const [displayValue, setDisplayValue] = useState("")
+	const [inputValue, setInputValue] = useState("")
 
-	const { addEntry, historyValue, isBrowsing, resetBrowsing, history, draft, setDraft } = useInputHistory({
-		isActive: isActive && !isFilePickerOpen,
-		getCurrentInput: () => currentInputRef.current,
-	})
+	const { addEntry, historyValue, isBrowsing, resetBrowsing, history, draft, setDraft, navigateUp, navigateDown } =
+		useInputHistory({
+			isActive: isActive && !isFilePickerOpen,
+			getCurrentInput: () => inputValue,
+		})
 
 	const [wasBrowsing, setWasBrowsing] = useState(false)
 
+	// Handle history navigation
 	useEffect(() => {
 		if (isBrowsing && !wasBrowsing) {
 			if (historyValue !== null) {
-				setDisplayValue(historyValue)
-				setInputKey((k) => k + 1)
+				setInputValue(historyValue)
 			}
 		} else if (!isBrowsing && wasBrowsing) {
-			setDisplayValue(draft)
-			setInputKey((k) => k + 1)
-			currentInputRef.current = draft
-		} else if (isBrowsing && historyValue !== null && historyValue !== displayValue) {
-			setDisplayValue(historyValue)
-			setInputKey((k) => k + 1)
+			setInputValue(draft)
+		} else if (isBrowsing && historyValue !== null && historyValue !== inputValue) {
+			setInputValue(historyValue)
 		}
 
 		setWasBrowsing(isBrowsing)
-	}, [isBrowsing, wasBrowsing, historyValue, draft, displayValue])
+	}, [isBrowsing, wasBrowsing, historyValue, draft, inputValue])
 
+	// Cleanup debounce timer
 	useEffect(() => {
 		return () => {
 			if (debounceTimerRef.current) {
@@ -72,7 +79,10 @@ export function FilePickerInput({
 
 	const checkForAtTrigger = useCallback(
 		(value: string) => {
-			const atIndex = value.lastIndexOf("@")
+			// Check on the last line for @ trigger
+			const lines = value.split("\n")
+			const lastLine = lines[lines.length - 1] || ""
+			const atIndex = lastLine.lastIndexOf("@")
 
 			if (atIndex === -1) {
 				if (isFilePickerOpen) {
@@ -82,7 +92,7 @@ export function FilePickerInput({
 				return
 			}
 
-			const query = value.substring(atIndex + 1)
+			const query = lastLine.substring(atIndex + 1)
 
 			if (query.includes(" ")) {
 				if (isFilePickerOpen) {
@@ -116,8 +126,7 @@ export function FilePickerInput({
 
 	const handleChange = useCallback(
 		(value: string) => {
-			currentInputRef.current = value
-
+			setInputValue(value)
 			checkForAtTrigger(value)
 
 			if (!isBrowsing) {
@@ -129,23 +138,24 @@ export function FilePickerInput({
 
 	const handleFileSelect = useCallback(
 		(result: FileSearchResult) => {
-			const currentValue = currentInputRef.current
-			const atIndex = currentValue.lastIndexOf("@")
+			// Find and replace the @ trigger on the last line
+			const lines = inputValue.split("\n")
+			const lastLineIndex = lines.length - 1
+			const lastLine = lines[lastLineIndex] || ""
+			const atIndex = lastLine.lastIndexOf("@")
 
 			if (atIndex !== -1) {
-				const beforeAt = currentValue.substring(0, atIndex)
-				const newValue = `${beforeAt}@/${result.path} `
+				const beforeAt = lastLine.substring(0, atIndex)
+				lines[lastLineIndex] = `${beforeAt}@/${result.path} `
+				const newValue = lines.join("\n")
 
-				currentInputRef.current = newValue
-				setDisplayValue(newValue)
-				setInputKey((k) => k + 1)
+				setInputValue(newValue)
 				setDraft(newValue)
-
 				lastSearchQueryRef.current = null
 				onFilePickerClose()
 			}
 		},
-		[onFilePickerClose, setDraft],
+		[inputValue, onFilePickerClose, setDraft],
 	)
 
 	const handleSubmit = useCallback(
@@ -163,16 +173,26 @@ export function FilePickerInput({
 			await addEntry(trimmed)
 
 			resetBrowsing("")
-			currentInputRef.current = ""
 			lastSearchQueryRef.current = null
-			setDisplayValue("")
-			setInputKey((k) => k + 1)
+			setInputValue("")
 
 			onSubmit(trimmed)
 		},
 		[isFilePickerOpen, addEntry, resetBrowsing, onSubmit],
 	)
 
+	const handleEscape = useCallback(() => {
+		// Clear all input on Escape
+		setInputValue("")
+		setDraft("")
+		resetBrowsing("")
+		lastSearchQueryRef.current = null
+		if (isFilePickerOpen) {
+			onFilePickerClose()
+		}
+	}, [setDraft, resetBrowsing, isFilePickerOpen, onFilePickerClose])
+
+	// Handle file picker selection with Enter
 	useInput(
 		(_input, key) => {
 			if (!isActive || !isFilePickerOpen) {
@@ -191,12 +211,19 @@ export function FilePickerInput({
 	)
 
 	return (
-		<TextInput
-			key={`file-picker-input-${inputKey}-${history.length}`}
-			defaultValue={displayValue}
-			placeholder={placeholder}
+		<MultilineTextInput
+			key={`file-picker-input-${history.length}`}
+			value={inputValue}
 			onChange={handleChange}
 			onSubmit={handleSubmit}
+			onEscape={handleEscape}
+			onUpAtFirstLine={navigateUp}
+			onDownAtLastLine={navigateDown}
+			placeholder={placeholder}
+			isActive={isActive}
+			showCursor={true}
+			prompt={prompt}
+			continuationIndent={continuationIndent}
 		/>
 	)
 }

@@ -4,7 +4,6 @@ vi.mock("../utils/historyStorage.js")
 
 // Track state and callbacks for testing.
 let mockState: Record<string, unknown> = {}
-let mockInputHandler: ((input: string, key: { upArrow: boolean; downArrow: boolean }) => void) | null = null
 let effectCallbacks: Array<() => void | (() => void)> = []
 
 vi.mock("react", () => ({
@@ -31,22 +30,10 @@ vi.mock("react", () => ({
 	useRef: vi.fn((initial: unknown) => ({ current: initial })),
 }))
 
-vi.mock("ink", () => ({
-	useInput: vi.fn(
-		(
-			handler: (input: string, key: { upArrow: boolean; downArrow: boolean }) => void,
-			_options?: { isActive?: boolean },
-		) => {
-			mockInputHandler = handler
-		},
-	),
-}))
-
 describe("useInputHistory", () => {
 	beforeEach(() => {
 		vi.resetAllMocks()
 		mockState = {}
-		mockInputHandler = null
 		effectCallbacks = []
 
 		// Default mock for loadHistory
@@ -110,11 +97,12 @@ describe("useInputHistory", () => {
 			expect(result.isBrowsing).toBe(false)
 		})
 
-		it("should register input handler with ink useInput", async () => {
+		it("should export navigateUp and navigateDown functions for manual navigation", async () => {
 			const { useInputHistory } = await import("../ui/hooks/useInputHistory.js")
-			useInputHistory()
+			const result = useInputHistory()
 
-			expect(mockInputHandler).not.toBeNull()
+			expect(typeof result.navigateUp).toBe("function")
+			expect(typeof result.navigateDown).toBe("function")
 		})
 	})
 
@@ -138,9 +126,13 @@ describe("useInputHistory", () => {
 			expect(result).toHaveProperty("resetBrowsing")
 			expect(result).toHaveProperty("history")
 			expect(result).toHaveProperty("draft")
+			expect(result).toHaveProperty("navigateUp")
+			expect(result).toHaveProperty("navigateDown")
 
 			expect(typeof result.addEntry).toBe("function")
 			expect(typeof result.resetBrowsing).toBe("function")
+			expect(typeof result.navigateUp).toBe("function")
+			expect(typeof result.navigateDown).toBe("function")
 			expect(Array.isArray(result.history)).toBe(true)
 		})
 	})

@@ -2,18 +2,17 @@
  * useInputHistory Hook
  *
  * Provides input history navigation for CLI text inputs.
- * Uses up/down arrow keys to navigate through previously entered prompts.
+ * Navigation is triggered via navigateUp/navigateDown functions.
  * History is persisted to ~/.roo/cli-history.json
  */
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { useInput } from "ink"
 
 import { loadHistory, addToHistory } from "../../utils/historyStorage.js"
 
 export interface UseInputHistoryOptions {
 	/**
-	 * Whether the hook should respond to arrow key input.
+	 * Whether the hook should respond to navigation calls.
 	 * Set to false when input is not active/focused.
 	 * @default true
 	 */
@@ -63,6 +62,16 @@ export interface UseInputHistoryReturn {
 	 * Set the current draft value (call from onChange)
 	 */
 	setDraft: (value: string) => void
+
+	/**
+	 * Navigate to older history entry (call when up arrow at first line)
+	 */
+	navigateUp: () => void
+
+	/**
+	 * Navigate to newer history entry (call when down arrow at last line)
+	 */
+	navigateDown: () => void
 }
 
 /**
@@ -112,42 +121,38 @@ export function useInputHistory(options: UseInputHistoryOptions = {}): UseInputH
 		}
 	}, [])
 
-	// Handle up/down arrow keys for history navigation
-	useInput(
-		(_input, key) => {
-			if (!isActive) return
+	// Navigate to older history entry
+	const navigateUp = useCallback(() => {
+		if (!isActive) return
+		if (history.length === 0) return
 
-			if (key.upArrow) {
-				// Navigate to older entry
-				if (history.length === 0) return
-
-				if (historyIndex === -1) {
-					// Starting to browse - save current input as draft
-					if (getCurrentInput) {
-						setDraft(getCurrentInput())
-					}
-					// Go to newest entry
-					setHistoryIndex(history.length - 1)
-				} else if (historyIndex > 0) {
-					// Go to older entry
-					setHistoryIndex(historyIndex - 1)
-				}
-				// At oldest entry - stay there
-			} else if (key.downArrow) {
-				// Navigate to newer entry
-				if (historyIndex === -1) return // Not browsing
-
-				if (historyIndex < history.length - 1) {
-					// Go to newer entry
-					setHistoryIndex(historyIndex + 1)
-				} else {
-					// At newest entry - return to draft
-					setHistoryIndex(-1)
-				}
+		if (historyIndex === -1) {
+			// Starting to browse - save current input as draft
+			if (getCurrentInput) {
+				setDraft(getCurrentInput())
 			}
-		},
-		{ isActive },
-	)
+			// Go to newest entry
+			setHistoryIndex(history.length - 1)
+		} else if (historyIndex > 0) {
+			// Go to older entry
+			setHistoryIndex(historyIndex - 1)
+		}
+		// At oldest entry - stay there
+	}, [isActive, history, historyIndex, getCurrentInput])
+
+	// Navigate to newer history entry
+	const navigateDown = useCallback(() => {
+		if (!isActive) return
+		if (historyIndex === -1) return // Not browsing
+
+		if (historyIndex < history.length - 1) {
+			// Go to newer entry
+			setHistoryIndex(historyIndex + 1)
+		} else {
+			// At newest entry - return to draft
+			setHistoryIndex(-1)
+		}
+	}, [isActive, historyIndex, history.length])
 
 	// Add new entry to history
 	const addEntry = useCallback(async (entry: string) => {
@@ -191,5 +196,7 @@ export function useInputHistory(options: UseInputHistoryOptions = {}): UseInputH
 		history,
 		draft,
 		setDraft,
+		navigateUp,
+		navigateDown,
 	}
 }
