@@ -20,6 +20,8 @@ export default defineConfig({
 		"@anthropic-ai/vertex-sdk",
 		// Keep @vscode/ripgrep external - we bundle the binary separately
 		"@vscode/ripgrep",
+		// Optional dev dependency of ink - not needed at runtime
+		"react-devtools-core",
 	],
 	esbuildOptions(options) {
 		// Enable JSX for React/Ink components

@@ -4,6 +4,7 @@
 
 import { Command } from "commander"
 import fs from "fs"
+import { createRequire } from "module"
 import path from "path"
 import { fileURLToPath } from "url"
 import { createElement } from "react"
@@ -29,9 +30,16 @@ const REASONING_EFFORTS = [...reasoningEffortsExtended, "unspecified", "disabled
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+// Read version from package.json
+const require = createRequire(import.meta.url)
+const packageJson = require("../package.json")
+
 const program = new Command()
 
-program.name("roo").description("Roo Code CLI - Run the Roo Code agent from the command line").version("0.1.0")
+program
+	.name("roo")
+	.description("Roo Code CLI - Run the Roo Code agent from the command line")
+	.version(packageJson.version)
 
 program
 	.argument("[prompt]", "The prompt/task to execute (optional in TUI mode)")

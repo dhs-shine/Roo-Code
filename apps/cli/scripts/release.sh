@@ -130,7 +130,7 @@ create_tarball() {
     info "Copying CLI files..."
     cp -r "$CLI_DIR/dist/"* "$RELEASE_DIR/lib/"
     
-    # Create package.json for npm install (only runtime dependencies)
+    # Create package.json for npm install (runtime dependencies that can't be bundled)
     info "Creating package.json..."
     node -e "
       const pkg = require('$CLI_DIR/package.json');
@@ -139,7 +139,11 @@ create_tarball() {
         version: pkg.version,
         type: 'module',
         dependencies: {
-          commander: pkg.dependencies.commander
+          '@inkjs/ui': pkg.dependencies['@inkjs/ui'],
+          'commander': pkg.dependencies.commander,
+          'ink': pkg.dependencies.ink,
+          'react': pkg.dependencies.react,
+          'zustand': pkg.dependencies.zustand
         }
       };
       console.log(JSON.stringify(newPkg, null, 2));
@@ -196,6 +200,9 @@ WRAPPER_EOF
     
     # Create version file
     echo "$VERSION" > "$RELEASE_DIR/VERSION"
+    
+    # Create empty .env file to suppress dotenvx warnings
+    touch "$RELEASE_DIR/.env"
     
     # Create tarball
     info "Creating tarball..."
