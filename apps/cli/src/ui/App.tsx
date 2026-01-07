@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { EventEmitter } from "events"
 import { randomUUID } from "crypto"
 
+import type { ClineMessage, TodoItem, WebviewMessage } from "@roo-code/types"
 // Import only message-utils to avoid custom-tools dependencies (execa/child_process)
 import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
-import type { ClineMessage, TodoItem } from "@roo-code/types"
 
 import { useCLIStore } from "./store.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
@@ -56,7 +56,7 @@ const PICKER_HEIGHT = 10 // Max height for picker when open
 interface ExtensionHostInterface extends EventEmitter {
 	activate(): Promise<void>
 	runTask(prompt: string): Promise<void>
-	sendToExtension(message: unknown): void
+	sendToExtension(message: WebviewMessage): void
 	dispose(): Promise<void>
 }
 
@@ -77,6 +77,7 @@ interface ExtensionHostOptions {
 	quiet: boolean
 	nonInteractive: boolean
 	disableOutput: boolean
+	ephemeral?: boolean
 }
 
 /**
@@ -155,6 +156,7 @@ function AppInner({
 	debug,
 	exitOnComplete,
 	reasoningEffort,
+	ephemeral,
 	createExtensionHost,
 	version,
 }: TUIAppProps) {
@@ -227,6 +229,11 @@ function AppInner({
 	const [showExitHint, setShowExitHint] = useState(false)
 	const exitHintTimeout = useRef<NodeJS.Timeout | null>(null)
 	const pendingExit = useRef(false)
+
+	// Countdown timer for auto-accepting followup questions (10 seconds for testing)
+	const FOLLOWUP_TIMEOUT_SECONDS = 10
+	const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
+	const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
 	// Track whether user wants to type custom response for followup questions
 	const [showCustomInput, setShowCustomInput] = useState(false)
@@ -313,10 +320,7 @@ function AppInner({
 			return
 		}
 
-		hostRef.current.sendToExtension({
-			type: "searchFiles",
-			query,
-		})
+		hostRef.current.sendToExtension({ type: "searchFiles", query })
 	}, [])
 
 	// Create autocomplete triggers
@@ -413,8 +417,63 @@ function AppInner({
 			if (exitHintTimeout.current) {
 				clearTimeout(exitHintTimeout.current)
 			}
+			if (countdownIntervalRef.current) {
+				clearInterval(countdownIntervalRef.current)
+			}
 		}
 	}, [])
+
+	// Countdown timer for auto-accepting followup questions
+	// Start countdown when a followup question with suggestions appears
+	useEffect(() => {
+		// Clear any existing countdown
+		if (countdownIntervalRef.current) {
+			clearInterval(countdownIntervalRef.current)
+			countdownIntervalRef.current = null
+		}
+
+		// Only start countdown for followup questions with suggestions (not custom input mode)
+		if (
+			pendingAsk?.type === "followup" &&
+			pendingAsk.suggestions &&
+			pendingAsk.suggestions.length > 0 &&
+			!showCustomInput
+		) {
+			// Start countdown
+			setCountdownSeconds(FOLLOWUP_TIMEOUT_SECONDS)
+
+			countdownIntervalRef.current = setInterval(() => {
+				setCountdownSeconds((prev) => {
+					if (prev === null || prev <= 1) {
+						// Time's up! Auto-select first option
+						if (countdownIntervalRef.current) {
+							clearInterval(countdownIntervalRef.current)
+							countdownIntervalRef.current = null
+						}
+						// Auto-submit the first suggestion
+						if (pendingAsk?.suggestions && pendingAsk.suggestions.length > 0) {
+							const firstSuggestion = pendingAsk.suggestions[0]
+							if (firstSuggestion) {
+								handleSubmit(firstSuggestion.answer)
+							}
+						}
+						return null
+					}
+					return prev - 1
+				})
+			}, 1000)
+		} else {
+			// No countdown needed
+			setCountdownSeconds(null)
+		}
+
+		return () => {
+			if (countdownIntervalRef.current) {
+				clearInterval(countdownIntervalRef.current)
+				countdownIntervalRef.current = null
+			}
+		}
+	}, [pendingAsk?.id, pendingAsk?.type, showCustomInput]) // Re-run when pendingAsk changes or user switches to custom input
 
 	// Refresh search results when fileSearchResults changes while file picker is open
 	// This handles the async timing where API results arrive after initial search
@@ -774,6 +833,7 @@ function AppInner({
 					quiet: !verbose && !debug,
 					nonInteractive,
 					disableOutput: true,
+					ephemeral,
 				})
 
 				hostRef.current = host
@@ -943,6 +1003,28 @@ function AppInner({
 		}
 	})
 
+	// Cancel countdown timer when user navigates in the followup suggestion menu
+	// This provides better UX - any user interaction cancels the auto-accept timer
+	const showFollowupSuggestions =
+		pendingAsk?.type === "followup" &&
+		pendingAsk.suggestions &&
+		pendingAsk.suggestions.length > 0 &&
+		!showCustomInput
+
+	useInput((_input, key) => {
+		// Only handle when followup suggestions are shown and countdown is active
+		if (showFollowupSuggestions && countdownSeconds !== null) {
+			// Cancel countdown on any arrow key navigation
+			if (key.upArrow || key.downArrow) {
+				if (countdownIntervalRef.current) {
+					clearInterval(countdownIntervalRef.current)
+					countdownIntervalRef.current = null
+				}
+				setCountdownSeconds(null)
+			}
+		}
+	})
+
 	// Handle picker state changes from AutocompleteInput
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const handlePickerStateChange = useCallback((state: AutocompletePickerState<any>) => setPickerState(state), [])
@@ -999,9 +1081,10 @@ function AppInner({
 	}
 
 	// Status bar content
+	// Don't show spinner when waiting for user input (pendingAsk is set)
 	const statusBarMessage = showExitHint ? (
 		<Text color="yellow">Press Ctrl+C again to exit</Text>
-	) : isLoading ? (
+	) : isLoading && !pendingAsk ? (
 		<Box>
 			<LoadingText>{view === "ToolUse" ? "Using tool" : "Thinking"}</LoadingText>
 			<Text color={theme.dimText}> • </Text>
@@ -1082,6 +1165,13 @@ function AppInner({
 										if (showCustomInput || isTransitioningToCustomInput.current) return
 
 										if (value === "__CUSTOM__") {
+											// Clear countdown timer synchronously BEFORE state update
+											// This prevents race condition where interval fires before useEffect cleanup
+											if (countdownIntervalRef.current) {
+												clearInterval(countdownIntervalRef.current)
+												countdownIntervalRef.current = null
+											}
+											setCountdownSeconds(null)
 											isTransitioningToCustomInput.current = true
 											setShowCustomInput(true)
 										} else if (value.trim()) {
@@ -1090,7 +1180,12 @@ function AppInner({
 									}}
 								/>
 								<HorizontalLine active={true} />
-								<Text color={theme.dimText}>↑↓ navigate • Enter select</Text>
+								<Text color={theme.dimText}>
+									↑↓ navigate • Enter select
+									{countdownSeconds !== null && (
+										<Text color="yellow"> • Auto-select in {countdownSeconds}s</Text>
+									)}
+								</Text>
 							</Box>
 						) : (
 							<Box flexDirection="column" marginTop={1}>

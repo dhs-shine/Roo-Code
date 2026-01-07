@@ -72,6 +72,8 @@ export interface AppProps {
 	debug: boolean
 	exitOnComplete: boolean
 	reasoningEffort?: string
+	/** Run in ephemeral mode - no state persists after this session */
+	ephemeral?: boolean
 	version: string
 }
 

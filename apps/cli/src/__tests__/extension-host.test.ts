@@ -1,8 +1,13 @@
 // pnpm --filter @roo-code/cli test src/__tests__/extension-host.test.ts
 
-import { ExtensionHost, type ExtensionHostOptions } from "../extension-host.js"
 import { EventEmitter } from "events"
-import type { ProviderName } from "@roo-code/types"
+import fs from "fs"
+import os from "os"
+import path from "path"
+
+import type { ProviderName, WebviewMessage } from "@roo-code/types"
+
+import { ExtensionHost, type ExtensionHostOptions } from "../extension-host.js"
 
 vi.mock("@roo-code/vscode-shim", () => ({
 	createVSCodeAPI: vi.fn(() => ({
@@ -369,15 +374,15 @@ describe("ExtensionHost", () => {
 				const emitSpy = vi.spyOn(host, "emit")
 
 				// Queue messages before ready
-				host.sendToExtension({ type: "test1" })
-				host.sendToExtension({ type: "test2" })
+				host.sendToExtension({ type: "requestModes" })
+				host.sendToExtension({ type: "requestCommands" })
 
 				// Mark ready (should flush)
 				host.markWebviewReady()
 
 				// Check that webviewMessage events were emitted for pending messages
-				expect(emitSpy).toHaveBeenCalledWith("webviewMessage", { type: "test1" })
-				expect(emitSpy).toHaveBeenCalledWith("webviewMessage", { type: "test2" })
+				expect(emitSpy).toHaveBeenCalledWith("webviewMessage", { type: "requestModes" })
+				expect(emitSpy).toHaveBeenCalledWith("webviewMessage", { type: "requestCommands" })
 			})
 		})
 	})
@@ -385,7 +390,7 @@ describe("ExtensionHost", () => {
 	describe("sendToExtension", () => {
 		it("should queue message when webview not ready", () => {
 			const host = createTestHost()
-			const message = { type: "test" }
+			const message: WebviewMessage = { type: "requestModes" }
 
 			host.sendToExtension(message)
 
@@ -396,7 +401,7 @@ describe("ExtensionHost", () => {
 		it("should emit webviewMessage event when webview is ready", () => {
 			const host = createTestHost()
 			const emitSpy = vi.spyOn(host, "emit")
-			const message = { type: "test" }
+			const message: WebviewMessage = { type: "requestModes" }
 
 			host.markWebviewReady()
 			host.sendToExtension(message)
@@ -408,7 +413,7 @@ describe("ExtensionHost", () => {
 			const host = createTestHost()
 
 			host.markWebviewReady()
-			host.sendToExtension({ type: "test" })
+			host.sendToExtension({ type: "requestModes" })
 
 			const pending = getPrivate<unknown[]>(host, "pendingMessages")
 			expect(pending).toHaveLength(0)
@@ -792,7 +797,7 @@ describe("ExtensionHost", () => {
 			callPrivate(host, "handleFollowupQuestionWithTimeout", 123, text)
 
 			// Should show prompt with timeout hint
-			expect(stdoutWriteSpy).toHaveBeenCalledWith(expect.stringContaining("auto-select in 10s"))
+			expect(stdoutWriteSpy).toHaveBeenCalledWith(expect.stringContaining("auto-select in 60s"))
 		})
 	})
 
@@ -1144,9 +1149,8 @@ describe("ExtensionHost", () => {
 		})
 	})
 
-	describe("handleStateMessage - mode change detection", () => {
+	describe("handleStateMessage - mode tracking", () => {
 		let host: ExtensionHost
-		let sendToExtensionSpy: ReturnType<typeof vi.spyOn>
 
 		beforeEach(() => {
 			host = createTestHost({
@@ -1157,99 +1161,194 @@ describe("ExtensionHost", () => {
 			})
 			// Mock process.stdout.write which is used by output()
 			vi.spyOn(process.stdout, "write").mockImplementation(() => true)
-			sendToExtensionSpy = vi.spyOn(host, "sendToExtension")
 		})
 
 		afterEach(() => {
 			vi.restoreAllMocks()
 		})
 
-		it("should re-apply API configuration when mode changes in state", () => {
-			// First state update establishes current mode
+		it("should track current mode when state updates with a mode", () => {
+			// Initial state update establishes current mode
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
-			sendToExtensionSpy.mockClear()
+			expect(getPrivate(host, "currentMode")).toBe("code")
 
-			// Second state update with different mode should trigger re-apply
+			// Second state update should update tracked mode
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
-
-			// Should have sent updateSettings with the API configuration
-			expect(sendToExtensionSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					type: "updateSettings",
-					updatedSettings: expect.objectContaining({
-						apiProvider: "anthropic",
-						apiKey: "test-key",
-						apiModelId: "test-model",
-					}),
-				}),
-			)
+			expect(getPrivate(host, "currentMode")).toBe("architect")
 		})
 
-		it("should not re-apply API configuration when mode stays the same", () => {
-			// First state update establishes current mode
+		it("should not change current mode when state has no mode", () => {
+			// Initial state update establishes current mode
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
-			sendToExtensionSpy.mockClear()
+			expect(getPrivate(host, "currentMode")).toBe("code")
 
-			// Second state update with same mode should not trigger re-apply
-			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
-
-			// Should not have sent updateSettings
-			expect(sendToExtensionSpy).not.toHaveBeenCalled()
-		})
-
-		it("should re-apply API configuration without apiKey when mode changes", () => {
-			// Create host without apiKey - API configuration should still be sent
-			// to preserve provider/model settings across mode switches
-			const hostNoKey = createTestHost({
-				mode: "code",
-				apiProvider: "anthropic",
-				model: "test-model",
-			})
-			const sendSpy = vi.spyOn(hostNoKey, "sendToExtension")
-
-			// First state update establishes current mode
-			callPrivate(hostNoKey, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
-			sendSpy.mockClear()
-
-			// Second state update with different mode
-			callPrivate(hostNoKey, "handleStateMessage", {
-				type: "state",
-				state: { mode: "architect", clineMessages: [] },
-			})
-
-			// Should have sent updateSettings with provider and model (but no apiKey)
-			expect(sendSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					type: "updateSettings",
-					updatedSettings: expect.objectContaining({
-						apiProvider: "anthropic",
-						apiModelId: "test-model",
-					}),
-				}),
-			)
-			// Verify apiKey is NOT in the config
-			const call = sendSpy.mock.calls[0]?.[0] as { updatedSettings: { apiKey?: string } } | undefined
-			expect(call?.updatedSettings.apiKey).toBeUndefined()
+			// State without mode should not change tracked mode
+			callPrivate(host, "handleStateMessage", { type: "state", state: { clineMessages: [] } })
+			expect(getPrivate(host, "currentMode")).toBe("code")
 		})
 
 		it("should track current mode across multiple changes", () => {
 			// Start with code mode
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
-			sendToExtensionSpy.mockClear()
+			expect(getPrivate(host, "currentMode")).toBe("code")
 
 			// Change to architect
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
-			expect(sendToExtensionSpy).toHaveBeenCalledTimes(1)
-			sendToExtensionSpy.mockClear()
+			expect(getPrivate(host, "currentMode")).toBe("architect")
 
 			// Change to debug
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "debug", clineMessages: [] } })
-			expect(sendToExtensionSpy).toHaveBeenCalledTimes(1)
+			expect(getPrivate(host, "currentMode")).toBe("debug")
+
+			// Another state update with debug
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "debug", clineMessages: [] } })
+			expect(getPrivate(host, "currentMode")).toBe("debug")
+		})
+
+		it("should not send updateSettings on mode change (CLI settings are applied once during runTask)", () => {
+			// This test ensures mode changes don't trigger automatic re-application of API settings.
+			// CLI settings are applied once during runTask() via updateSettings.
+			// Mode-specific provider profiles are handled by the extension's handleModeSwitch.
+			const sendToExtensionSpy = vi.spyOn(host, "sendToExtension")
+
+			// Initial state
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "code", clineMessages: [] } })
 			sendToExtensionSpy.mockClear()
 
-			// Stay on debug
-			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "debug", clineMessages: [] } })
+			// Mode change should NOT trigger sendToExtension
+			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
 			expect(sendToExtensionSpy).not.toHaveBeenCalled()
+		})
+	})
+
+	describe("ephemeral mode", () => {
+		describe("constructor", () => {
+			it("should store ephemeral option", () => {
+				const host = createTestHost({ ephemeral: true })
+				const options = getPrivate<ExtensionHostOptions>(host, "options")
+				expect(options.ephemeral).toBe(true)
+			})
+
+			it("should default ephemeral to undefined", () => {
+				const host = createTestHost()
+				const options = getPrivate<ExtensionHostOptions>(host, "options")
+				expect(options.ephemeral).toBeUndefined()
+			})
+
+			it("should initialize ephemeralStorageDir to null", () => {
+				const host = createTestHost({ ephemeral: true })
+				expect(getPrivate(host, "ephemeralStorageDir")).toBeNull()
+			})
+		})
+
+		describe("createEphemeralStorageDir", () => {
+			let createdDirs: string[] = []
+
+			afterEach(async () => {
+				// Clean up any directories created during tests
+				for (const dir of createdDirs) {
+					try {
+						await fs.promises.rm(dir, { recursive: true, force: true })
+					} catch {
+						// Ignore cleanup errors
+					}
+				}
+				createdDirs = []
+			})
+
+			it("should create a directory in the system temp folder", async () => {
+				const host = createTestHost({ ephemeral: true })
+				const tmpDir = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				createdDirs.push(tmpDir)
+
+				expect(tmpDir).toContain(os.tmpdir())
+				expect(tmpDir).toContain("roo-cli-")
+				expect(fs.existsSync(tmpDir)).toBe(true)
+			})
+
+			it("should create a unique directory each time", async () => {
+				const host = createTestHost({ ephemeral: true })
+				const dir1 = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				const dir2 = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				createdDirs.push(dir1, dir2)
+
+				expect(dir1).not.toBe(dir2)
+				expect(fs.existsSync(dir1)).toBe(true)
+				expect(fs.existsSync(dir2)).toBe(true)
+			})
+
+			it("should include timestamp and random id in directory name", async () => {
+				const host = createTestHost({ ephemeral: true })
+				const tmpDir = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				createdDirs.push(tmpDir)
+
+				const dirName = path.basename(tmpDir)
+				// Format: roo-cli-{timestamp}-{randomId}
+				expect(dirName).toMatch(/^roo-cli-\d+-[a-z0-9]+$/)
+			})
+		})
+
+		describe("dispose - ephemeral cleanup", () => {
+			it("should clean up ephemeral storage directory on dispose", async () => {
+				const host = createTestHost({ ephemeral: true })
+
+				// Create the ephemeral directory
+				const tmpDir = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				;(host as unknown as Record<string, unknown>).ephemeralStorageDir = tmpDir
+
+				// Verify directory exists
+				expect(fs.existsSync(tmpDir)).toBe(true)
+
+				// Dispose the host
+				await host.dispose()
+
+				// Directory should be removed
+				expect(fs.existsSync(tmpDir)).toBe(false)
+				expect(getPrivate(host, "ephemeralStorageDir")).toBeNull()
+			})
+
+			it("should not fail dispose if ephemeral directory doesn't exist", async () => {
+				const host = createTestHost({ ephemeral: true })
+
+				// Set a non-existent directory
+				;(host as unknown as Record<string, unknown>).ephemeralStorageDir = "/non/existent/path/roo-cli-test"
+
+				// Dispose should not throw
+				await expect(host.dispose()).resolves.toBeUndefined()
+			})
+
+			it("should clean up ephemeral directory with contents", async () => {
+				const host = createTestHost({ ephemeral: true })
+
+				// Create the ephemeral directory with some content
+				const tmpDir = await callPrivate<Promise<string>>(host, "createEphemeralStorageDir")
+				;(host as unknown as Record<string, unknown>).ephemeralStorageDir = tmpDir
+
+				// Add some files and subdirectories
+				await fs.promises.writeFile(path.join(tmpDir, "test.txt"), "test content")
+				await fs.promises.mkdir(path.join(tmpDir, "subdir"))
+				await fs.promises.writeFile(path.join(tmpDir, "subdir", "nested.txt"), "nested content")
+
+				// Verify content exists
+				expect(fs.existsSync(path.join(tmpDir, "test.txt"))).toBe(true)
+				expect(fs.existsSync(path.join(tmpDir, "subdir", "nested.txt"))).toBe(true)
+
+				// Dispose the host
+				await host.dispose()
+
+				// Directory and all contents should be removed
+				expect(fs.existsSync(tmpDir)).toBe(false)
+			})
+
+			it("should not clean up anything if not in ephemeral mode", async () => {
+				const host = createTestHost({ ephemeral: false })
+
+				// ephemeralStorageDir should be null
+				expect(getPrivate(host, "ephemeralStorageDir")).toBeNull()
+
+				// Dispose should complete normally
+				await expect(host.dispose()).resolves.toBeUndefined()
+			})
 		})
 	})
 })

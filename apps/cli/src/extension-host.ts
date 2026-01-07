@@ -16,8 +16,15 @@ import fs from "fs"
 import os from "os"
 import readline from "readline"
 
-import { ProviderName, ReasoningEffortExtended, RooCodeSettings, ExtensionMessage } from "@roo-code/types"
+import {
+	ProviderName,
+	ReasoningEffortExtended,
+	RooCodeSettings,
+	ExtensionMessage,
+	WebviewMessage,
+} from "@roo-code/types"
 import { createVSCodeAPI, setRuntimeConfigValues } from "@roo-code/vscode-shim"
+import { debugLog } from "@roo-code/core/debug-log"
 
 // Get the CLI package root directory (for finding node_modules/@vscode/ripgrep)
 // When bundled, import.meta.url points to dist/index.js, so go up to package root
@@ -40,6 +47,11 @@ export interface ExtensionHostOptions {
 	 * Use this when running in TUI mode where Ink controls the terminal.
 	 */
 	disableOutput?: boolean
+	/**
+	 * When true, uses a temporary storage directory that is cleaned up on exit.
+	 * No state persists between runs - all configuration from CLI flags/environment.
+	 */
+	ephemeral?: boolean
 }
 
 interface ExtensionModule {
@@ -53,8 +65,6 @@ interface ExtensionModule {
 interface WebviewViewProvider {
 	resolveWebviewView?(webviewView: unknown, context: unknown, token: unknown): void | Promise<void>
 }
-
-const DEBUG_LOG_PATH = path.join(os.homedir(), ".roo", "cli-debug.log")
 
 export class ExtensionHost extends EventEmitter {
 	private vscode: ReturnType<typeof createVSCodeAPI> | null = null
@@ -94,6 +104,9 @@ export class ExtensionHost extends EventEmitter {
 	// Track the current mode to detect mode changes
 	private currentMode: string | null = null
 
+	// Track ephemeral storage directory for cleanup
+	private ephemeralStorageDir: string | null = null
+
 	constructor(options: ExtensionHostOptions) {
 		super()
 		this.options = options
@@ -105,48 +118,7 @@ export class ExtensionHost extends EventEmitter {
 	 * This avoids console output which breaks the TUI.
 	 */
 	private log(message: string, data?: unknown): void {
-		try {
-			const logDir = path.dirname(DEBUG_LOG_PATH)
-
-			if (!fs.existsSync(logDir)) {
-				fs.mkdirSync(logDir, { recursive: true })
-			}
-
-			const timestamp = new Date().toISOString()
-
-			const entry = data
-				? `[${timestamp}] ${message}: ${JSON.stringify(data, null, 2)}\n`
-				: `[${timestamp}] ${message}\n`
-
-			fs.appendFileSync(DEBUG_LOG_PATH, entry)
-		} catch {
-			// NO-OP
-		}
-	}
-
-	/**
-	 * Get the shape (keys) of an object for logging
-	 */
-	private getMessageShape(msg: unknown): Record<string, string> {
-		if (!msg || typeof msg !== "object") {
-			return { _type: typeof msg }
-		}
-
-		const shape: Record<string, string> = {}
-
-		for (const [key, value] of Object.entries(msg as Record<string, unknown>)) {
-			if (value === null) {
-				shape[key] = "null"
-			} else if (Array.isArray(value)) {
-				shape[key] = `array[${value.length}]`
-			} else if (typeof value === "object") {
-				shape[key] = `object{${Object.keys(value).join(",")}}`
-			} else {
-				shape[key] = typeof value
-			}
-		}
-
-		return shape
+		debugLog(message, data)
 	}
 
 	private suppressNodeWarnings(): void {
@@ -204,6 +176,17 @@ export class ExtensionHost extends EventEmitter {
 		}
 	}
 
+	/**
+	 * Create a unique ephemeral storage directory in the system temp folder.
+	 * This directory will be cleaned up when dispose() is called.
+	 */
+	private async createEphemeralStorageDir(): Promise<string> {
+		const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+		const tmpDir = path.join(os.tmpdir(), `roo-cli-${uniqueId}`)
+		await fs.promises.mkdir(tmpDir, { recursive: true })
+		return tmpDir
+	}
+
 	async activate(): Promise<void> {
 		// Suppress Node.js warnings (like MaxListenersExceededWarning) before anything else
 		this.suppressNodeWarnings()
@@ -219,12 +202,20 @@ export class ExtensionHost extends EventEmitter {
 			throw new Error(`Extension bundle not found at: ${bundlePath}`)
 		}
 
+		// Create ephemeral storage directory if ephemeral mode is enabled
+		let storageDir: string | undefined
+
+		if (this.options.ephemeral) {
+			storageDir = await this.createEphemeralStorageDir()
+			this.ephemeralStorageDir = storageDir
+		}
+
 		// 1. Create VSCode API mock
 		this.vscode = createVSCodeAPI(
 			this.options.extensionPath,
 			this.options.workspacePath,
 			undefined, // identity
-			{ appRoot: CLI_PACKAGE_ROOT }, // options - point appRoot to CLI package for ripgrep
+			{ appRoot: CLI_PACKAGE_ROOT, storageDir }, // options - point appRoot to CLI package for ripgrep, custom storageDir for ephemeral mode
 		)
 
 		// 2. Set global vscode reference for the extension
@@ -332,7 +323,7 @@ export class ExtensionHost extends EventEmitter {
 	/**
 	 * Send a message to the extension (simulating webview -> extension communication).
 	 */
-	sendToExtension(message: unknown): void {
+	sendToExtension(message: WebviewMessage): void {
 		if (!this.isWebviewReady) {
 			this.pendingMessages.push(message)
 			return
@@ -554,99 +545,55 @@ export class ExtensionHost extends EventEmitter {
 			})
 		}
 
-		// Set up message listener for extension responses
-		this.setupMessageListener()
+		// Should this only be done once?
+		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
+		this.on("extensionWebviewMessage", this.messageListener)
 
-		// Configure approval settings based on mode
-		// In non-interactive mode (-y flag), enable auto-approval for everything
-		// In interactive mode (default), we'll prompt the user for each action
+		let defaultSettings: RooCodeSettings
+
 		if (this.options.nonInteractive) {
-			const settings: RooCodeSettings = {
+			defaultSettings = {
 				autoApprovalEnabled: true,
 				alwaysAllowReadOnly: true,
 				alwaysAllowReadOnlyOutsideWorkspace: true,
 				alwaysAllowWrite: true,
 				alwaysAllowWriteOutsideWorkspace: true,
-				alwaysAllowWriteProtected: false, // Keep protected files safe.
+				alwaysAllowWriteProtected: false,
 				alwaysAllowBrowser: true,
 				alwaysAllowMcp: true,
 				alwaysAllowModeSwitch: true,
 				alwaysAllowSubtasks: true,
 				alwaysAllowExecute: true,
 				alwaysAllowFollowupQuestions: true,
+				// NOTE: Setting to 0 should disable extension's internal timeout,
+				// but we need to verify this is working correctly.
+				followupAutoApproveTimeoutMs: 0,
 				allowedCommands: ["*"],
 				commandExecutionTimeout: 20,
 				enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
 			}
-
-			this.applyRuntimeSettings(settings)
-			this.sendToExtension({ type: "updateSettings", updatedSettings: settings })
-			await new Promise<void>((resolve) => setTimeout(resolve, 100))
 		} else {
-			const settings: RooCodeSettings = {
+			defaultSettings = {
 				autoApprovalEnabled: false,
-				enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
+				enableCheckpoints: false,
 			}
-
-			this.applyRuntimeSettings(settings)
-			this.sendToExtension({ type: "updateSettings", updatedSettings: settings })
-			await new Promise<void>((resolve) => setTimeout(resolve, 100))
 		}
 
-		// Always send API configuration - it may include API key from environment variables
-		const apiConfig = this.buildApiConfiguration()
-		this.sendToExtension({ type: "updateSettings", updatedSettings: apiConfig })
+		const settings = { ...defaultSettings, ...this.buildApiConfiguration() }
+		this.applyRuntimeSettings(settings)
+
+		this.sendToExtension({
+			type: "updateSettings",
+			updatedSettings: settings,
+		})
+
 		await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
 		this.sendToExtension({ type: "newTask", text: prompt })
 		await this.waitForCompletion()
 	}
 
-	/**
-	 * Set up listener for messages from the extension
-	 */
-	private setupMessageListener(): void {
-		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
-		this.on("extensionWebviewMessage", this.messageListener)
-	}
-
 	private handleExtensionMessage(msg: ExtensionMessage): void {
-		// Log all incoming messages for debugging
-		this.log(`[MSG] type=${msg.type}`, this.getMessageShape(msg))
-
-		// For state messages, log additional details about the state
-		if (msg.type === "state" && msg.state) {
-			const state = msg.state
-			// Extract model ID based on provider (different providers use different fields)
-			const apiConfig = state.apiConfiguration
-			let modelId = apiConfig?.apiModelId
-
-			if (apiConfig?.apiProvider === "openrouter") {
-				modelId = apiConfig?.openRouterModelId
-			} else if (apiConfig?.apiProvider === "openai") {
-				modelId = apiConfig?.openAiModelId
-			} else if (apiConfig?.apiProvider === "ollama") {
-				modelId = apiConfig?.ollamaModelId
-			}
-
-			this.log(`[STATE] mode=${state.mode}, clineMessages=${state.clineMessages?.length || 0}`, {
-				apiProvider: apiConfig?.apiProvider,
-				modelId: modelId,
-				mode: state.mode,
-				cliProvider: this.options.apiProvider,
-				cliModel: this.options.model,
-			})
-
-			// Log any ask messages in the state that might indicate resume
-			if (state.clineMessages) {
-				for (const clineMsg of state.clineMessages) {
-					if (clineMsg?.ask === "resume_task" || clineMsg?.ask === "resume_completed_task") {
-						this.log(`[RESUME DETECTED] ask=${clineMsg.ask}, ts=${clineMsg.ts}`)
-					}
-				}
-			}
-		}
-
 		switch (msg.type) {
 			case "state":
 				this.handleStateMessage(msg)
@@ -658,12 +605,11 @@ export class ExtensionHost extends EventEmitter {
 				break
 
 			case "modes":
-				// Forward modes list to the TUI.
-				this.emit("extensionWebviewMessage", msg)
+				// Forward modes list to the TUI via a dedicated event.
+				// DO NOT emit to "extensionWebviewMessage" - that would create an infinite loop
+				// since messageListener listens on that event and calls this function.
+				this.emit("modesUpdated", msg)
 				break
-
-			default:
-			// NO-OP
 		}
 	}
 
@@ -752,29 +698,11 @@ export class ExtensionHost extends EventEmitter {
 		// Track current mode for mode switch detection (in tool execution).
 		const newMode = state.mode
 
-		if (newMode && this.currentMode !== null && this.currentMode !== newMode) {
-			this.log(`[MODE CHANGE] from=${this.currentMode} to=${newMode}, re-applying CLI settings`)
-			const updatedSettings = this.buildApiConfiguration()
-			this.sendToExtension({ type: "updateSettings", updatedSettings })
-		}
-
 		if (newMode) {
 			this.currentMode = newMode
 		}
 
-		// Detect when the model in state differs from CLI-specified model.
-		// This catches task resume scenarios where the extension loads stored apiConfiguration
-		// which may differ from CLI-provided settings. We re-apply CLI settings proactively.
-		const apiConfig = state.apiConfiguration as Record<string, unknown> | undefined
-		const stateModelId = this.getStateModelId(apiConfig)
-		const expectedModelId = this.getExpectedModelId()
-
-		if (expectedModelId && stateModelId && stateModelId !== expectedModelId) {
-			this.log(`[MODEL MISMATCH] state has ${stateModelId}, CLI expects ${expectedModelId}, re-applying settings`)
-			const updatedSettings = this.buildApiConfiguration()
-			this.sendToExtension({ type: "updateSettings", updatedSettings })
-		}
-
+		// Why do we do this?
 		const clineMessages = state.clineMessages
 
 		if (clineMessages && clineMessages.length > 0) {
@@ -807,28 +735,19 @@ export class ExtensionHost extends EventEmitter {
 	 * Handle messageUpdated - individual streaming updates for a single message
 	 * This is where real-time streaming happens!
 	 */
-	private handleMessageUpdated(msg: ExtensionMessage): void {
-		const clineMessage = msg.clineMessage
+	private handleMessageUpdated({ clineMessage: msg }: ExtensionMessage): void {
+		// if (msg?.ask) {
+		// 	this.log(`[MSG] ts=${msg.ts}, ask=${msg.ask} -> ${msg.partial ? "partial" : msg.text}`)
+		// } else if (msg?.say) {
+		// 	this.log(`[MSG] ts=${msg.ts}, say=${msg.say} -> ${msg.partial ? "partial" : msg.text}`)
+		// } else if (msg) {
+		// 	this.log(`[MSG] ts=${msg.ts}, type=${msg.type}, text=${msg.text}`)
+		// }
 
-		if (!clineMessage) {
-			return
-		}
-
-		const ts = clineMessage.ts
-		const isPartial = clineMessage.partial
-		const text = clineMessage.text
-		const type = clineMessage.type
-		const say = clineMessage.say
-		const ask = clineMessage.ask
-
-		if (!ts) {
-			return
-		}
-
-		if (type === "say" && say && typeof text === "string") {
-			this.handleSayMessage(ts, say, text, isPartial)
-		} else if (type === "ask" && ask && typeof text === "string") {
-			this.handleAskMessage(ts, ask, text, isPartial)
+		if (msg?.type === "say" && msg.say && typeof msg.text === "string") {
+			this.handleSayMessage(msg.ts, msg.say, msg.text, msg.partial)
+		} else if (msg?.type === "ask" && msg.ask && typeof msg.text === "string") {
+			this.handleAskMessage(msg.ts, msg.ask, msg.text, msg.partial)
 		}
 	}
 
@@ -903,6 +822,7 @@ export class ExtensionHost extends EventEmitter {
 							const delta = text.slice(streamed.text.length)
 							this.writeStream(delta)
 						}
+
 						this.finishStream(ts)
 					} else {
 						// Not streamed yet - output complete message
@@ -1005,37 +925,40 @@ export class ExtensionHost extends EventEmitter {
 	 * In non-interactive mode: auto-approve (handled by extension settings)
 	 */
 	private handleAskMessage(ts: number, ask: string, text: string, isPartial: boolean | undefined): void {
-		// Special handling for command_output - stream it in real-time
-		// This needs to happen before the isPartial skip
+		// Special handling for command_output - stream it in real-time.
+		// This needs to happen before the isPartial skip.
 		if (ask === "command_output") {
 			this.handleCommandOutputAsk(ts, text, isPartial)
 			return
 		}
 
-		// Skip partial messages - wait for the complete ask
+		// Skip partial messages - wait for the complete ask.
 		if (isPartial) {
 			return
 		}
 
-		// Check if we already handled this ask
+		// Check if we already handled this ask.
 		if (this.pendingAsks.has(ts)) {
 			return
 		}
 
-		// In non-interactive mode, the extension's auto-approval settings handle everything
-		// We just need to display the action being taken
+		// IMPORTANT: Check disableOutput FIRST, before nonInteractive!
+		// In TUI mode (disableOutput=true), don't handle asks here - let the TUI handle them.
+		// The TUI listens to the same extensionWebviewMessage events and renders its own UI.
+		// If we don't check this first, the non-interactive handler would capture stdin input
+		// that's meant for the TUI (e.g., arrow keys show as "[B[B[B[B" escape codes).
+		if (this.options.disableOutput) {
+			return
+		}
+
+		// In non-interactive mode (without TUI), the extension's auto-approval settings handle
+		// most things, but followup questions need special handling with timeout.
 		if (this.options.nonInteractive) {
 			this.handleAskMessageNonInteractive(ts, ask, text)
 			return
 		}
 
-		// In TUI mode (disableOutput), don't handle asks here - let the TUI handle them
-		// The TUI listens to the same extensionWebviewMessage events and renders its own UI
-		if (this.options.disableOutput) {
-			return
-		}
-
-		// Interactive mode - prompt user for input
+		// Interactive mode - prompt user for input.
 		this.handleAskMessageInteractive(ts, ask, text)
 	}
 
@@ -1070,9 +993,12 @@ export class ExtensionHost extends EventEmitter {
 
 			case "tool":
 				if (!alreadyDisplayed && text) {
+					let toolInfo
+					let toolName
+
 					try {
-						const toolInfo = JSON.parse(text)
-						const toolName = toolInfo.tool || "unknown"
+						toolInfo = JSON.parse(text)
+						toolName = toolInfo.tool || "unknown"
 						this.output(`\n[tool] ${toolName}`)
 
 						// Display all tool parameters (excluding 'tool' which is the name).
@@ -1241,8 +1167,10 @@ export class ExtensionHost extends EventEmitter {
 
 			// Check if user entered a number corresponding to a suggestion
 			const num = parseInt(responseText, 10)
+
 			if (!isNaN(num) && num >= 1 && num <= suggestions.length) {
 				const selectedSuggestion = suggestions[num - 1]
+
 				if (selectedSuggestion) {
 					responseText = selectedSuggestion.answer || String(selectedSuggestion)
 					this.output(`Selected: ${responseText}`)
@@ -1267,8 +1195,9 @@ export class ExtensionHost extends EventEmitter {
 
 	/**
 	 * Handle followup questions with a timeout (for non-interactive mode)
-	 * Shows the prompt but auto-selects the first option after 10 seconds
+	 * Shows the prompt but auto-selects the first option after the timeout
 	 * if the user doesn't type anything. Cancels the timeout on any keypress.
+	 * Default timeout is 60 seconds, configurable via followupAutoApproveTimeoutMs.
 	 */
 	private async handleFollowupQuestionWithTimeout(ts: number, text: string): Promise<void> {
 		let question = text
@@ -1289,33 +1218,40 @@ export class ExtensionHost extends EventEmitter {
 		// Show numbered suggestions
 		if (suggestions.length > 0) {
 			this.output("\nSuggested answers:")
+
 			suggestions.forEach((suggestion, index) => {
 				const suggestionText = suggestion.answer || String(suggestion)
 				const modeHint = suggestion.mode ? ` (mode: ${suggestion.mode})` : ""
 				this.output(`  ${index + 1}. ${suggestionText}${modeHint}`)
 			})
+
 			this.output("")
 		}
 
-		// Default to first suggestion or empty string
+		// Default to first suggestion or empty string.
 		const firstSuggestion = suggestions.length > 0 ? suggestions[0] : null
 		const defaultAnswer = firstSuggestion?.answer ?? ""
+
+		// Default timeout is 10 seconds for testing (will be configurable later).
+		const timeoutMs = 60_000
 
 		try {
 			const answer = await this.promptForInputWithTimeout(
 				suggestions.length > 0
-					? `Enter number (1-${suggestions.length}) or type your answer (auto-select in 10s): `
-					: "Your answer (auto-select in 10s): ",
-				10000, // 10 second timeout
+					? `Enter number (1-${suggestions.length}) or type your answer (auto-select in ${Math.round(timeoutMs / 1000)}s): `
+					: `Your answer (auto-select in ${Math.round(timeoutMs / 1000)}s): `,
+				timeoutMs,
 				defaultAnswer,
 			)
 
 			let responseText = answer.trim()
 
-			// Check if user entered a number corresponding to a suggestion
+			// Check if user entered a number corresponding to a suggestion.
 			const num = parseInt(responseText, 10)
+
 			if (!isNaN(num) && num >= 1 && num <= suggestions.length) {
 				const selectedSuggestion = suggestions[num - 1]
+
 				if (selectedSuggestion) {
 					responseText = selectedSuggestion.answer || String(selectedSuggestion)
 					this.output(`Selected: ${responseText}`)
@@ -1323,8 +1259,8 @@ export class ExtensionHost extends EventEmitter {
 			}
 
 			this.sendFollowupResponse(responseText)
-		} catch {
-			// If prompt fails, use default
+		} catch (_error) {
+			// If prompt fails, use default.
 			this.output(`[Using default: ${defaultAnswer || "(empty)"}]`)
 			this.sendFollowupResponse(defaultAnswer)
 		}
@@ -1339,15 +1275,18 @@ export class ExtensionHost extends EventEmitter {
 		return new Promise((resolve) => {
 			// Temporarily restore console for interactive prompts
 			const wasQuiet = this.options.quiet
+
 			if (wasQuiet) {
 				this.restoreConsole()
 			}
 
 			// Put stdin in raw mode to detect individual keypresses
 			const wasRaw = process.stdin.isRaw
+
 			if (process.stdin.isTTY) {
 				process.stdin.setRawMode(true)
 			}
+
 			process.stdin.resume()
 
 			let inputBuffer = ""
@@ -1371,10 +1310,13 @@ export class ExtensionHost extends EventEmitter {
 			const cleanup = () => {
 				clearTimeout(timeout)
 				process.stdin.removeListener("data", onData)
+
 				if (process.stdin.isTTY && wasRaw !== undefined) {
 					process.stdin.setRawMode(wasRaw)
 				}
+
 				process.stdin.pause()
+
 				if (wasQuiet) {
 					this.setupQuietMode()
 				}
@@ -1486,13 +1428,14 @@ export class ExtensionHost extends EventEmitter {
 		try {
 			const approved = await this.promptForYesNo("Approve this action? (y/n): ")
 			this.sendApprovalResponse(approved)
-			// Note: Mode switch detection and API config re-application is handled in handleStateMessage
-			// This works for both interactive and non-interactive (auto-approved) modes
+			// Note: Mode switch detection and API config re-application is handled in handleStateMessage.
+			// This works for both interactive and non-interactive (auto-approved) modes.
 		} catch {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
 		}
-		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment
+
+		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment.
 	}
 
 	/**
@@ -1776,22 +1719,22 @@ export class ExtensionHost extends EventEmitter {
 	 * Clean up resources
 	 */
 	async dispose(): Promise<void> {
-		// Clear pending asks
+		// Clear pending asks.
 		this.pendingAsks.clear()
 
-		// Close readline interface if open
+		// Close readline interface if open.
 		if (this.rl) {
 			this.rl.close()
 			this.rl = null
 		}
 
-		// Remove message listener
+		// Remove message listener.
 		if (this.messageListener) {
 			this.off("extensionWebviewMessage", this.messageListener)
 			this.messageListener = null
 		}
 
-		// Deactivate extension if it has a deactivate function
+		// Deactivate extension if it has a deactivate function.
 		if (this.extensionModule?.deactivate) {
 			try {
 				await this.extensionModule.deactivate()
@@ -1800,17 +1743,27 @@ export class ExtensionHost extends EventEmitter {
 			}
 		}
 
-		// Clear references
+		// Clear references.
 		this.vscode = null
 		this.extensionModule = null
 		this.extensionAPI = null
 		this.webviewProviders.clear()
 
-		// Clear globals
+		// Clear globals.
 		delete (global as Record<string, unknown>).vscode
 		delete (global as Record<string, unknown>).__extensionHost
 
-		// Restore console if it was suppressed
+		// Restore console if it was suppressed.
 		this.restoreConsole()
+
+		// Clean up ephemeral storage directory if it exists.
+		if (this.ephemeralStorageDir) {
+			try {
+				await fs.promises.rm(this.ephemeralStorageDir, { recursive: true, force: true })
+				this.ephemeralStorageDir = null
+			} catch (_error) {
+				// NO-OP
+			}
+		}
 	}
 }

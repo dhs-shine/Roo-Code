@@ -58,6 +58,7 @@ program
 		"Reasoning effort level (unspecified, disabled, none, minimal, low, medium, high, xhigh)",
 		DEFAULTS.reasoningEffort,
 	)
+	.option("--ephemeral", "Run without persisting state (uses temporary storage)", false)
 	.option("--no-tui", "Disable TUI, use plain text output")
 	.action(
 		async (
@@ -74,6 +75,7 @@ program
 				model?: string
 				mode?: string
 				reasoningEffort?: ReasoningEffortExtended | "unspecified" | "disabled"
+				ephemeral: boolean
 				tui: boolean
 			},
 		) => {
@@ -153,6 +155,7 @@ program
 						quiet: boolean
 						nonInteractive: boolean
 						disableOutput: boolean
+						ephemeral?: boolean
 					}) => {
 						return new ExtensionHost({
 							mode: opts.mode,
@@ -169,6 +172,7 @@ program
 							quiet: opts.quiet,
 							nonInteractive: opts.nonInteractive,
 							disableOutput: opts.disableOutput,
+							ephemeral: opts.ephemeral,
 						})
 					}
 
@@ -186,6 +190,7 @@ program
 							debug: options.debug,
 							exitOnComplete: options.exitOnComplete,
 							reasoningEffort: options.reasoningEffort,
+							ephemeral: options.ephemeral,
 							createExtensionHost: createExtensionHost,
 							version: packageJson.version,
 						}),
@@ -219,6 +224,7 @@ program
 					verbose: options.debug,
 					quiet: !options.verbose && !options.debug,
 					nonInteractive: options.yes,
+					ephemeral: options.ephemeral,
 				})
 
 				// Handle SIGINT (Ctrl+C)
