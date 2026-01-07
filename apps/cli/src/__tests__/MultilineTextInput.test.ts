@@ -497,3 +497,72 @@ describe("multi-line history integration", () => {
 		expect(lines).toEqual(["foo", "bar", "baz"])
 	})
 })
+
+describe("cursor overflow prevention", () => {
+	/**
+	 * Tests the logic that prevents visual shift when cursor is at the end
+	 * of a max-width row. Adding a cursor space character would overflow
+	 * the terminal width, causing text to shift left.
+	 */
+
+	it("should detect when cursor space would overflow", () => {
+		// Simulates the overflow detection logic from renderVisualRow
+		const checkWouldOverflow = (
+			columns: number | undefined,
+			cursorAtEnd: boolean,
+			prefixLen: number,
+			textLen: number,
+		): boolean => {
+			return columns !== undefined && cursorAtEnd && prefixLen + textLen + 1 > columns
+		}
+
+		// Terminal width 80, prefix "> " (2 chars), text 78 chars = exactly full
+		// Adding cursor space would make it 81 chars -> overflow
+		expect(checkWouldOverflow(80, true, 2, 78)).toBe(true)
+
+		// Same scenario but cursor not at end -> no overflow issue
+		expect(checkWouldOverflow(80, false, 2, 78)).toBe(false)
+
+		// Text shorter than max width -> no overflow
+		expect(checkWouldOverflow(80, true, 2, 50)).toBe(false)
+
+		// No columns specified -> no overflow detection
+		expect(checkWouldOverflow(undefined, true, 2, 78)).toBe(false)
+
+		// Continuation line with shorter indent
+		expect(checkWouldOverflow(80, true, 2, 77)).toBe(false)
+
+		// Exactly at boundary (prefixLen + textLen + 1 === columns)
+		expect(checkWouldOverflow(80, true, 2, 77)).toBe(false)
+
+		// One character over would overflow
+		expect(checkWouldOverflow(80, true, 3, 77)).toBe(true)
+	})
+
+	it("should not overflow when cursor is in the middle of text", () => {
+		const checkWouldOverflow = (
+			columns: number | undefined,
+			cursorAtEnd: boolean,
+			prefixLen: number,
+			textLen: number,
+		): boolean => {
+			return columns !== undefined && cursorAtEnd && prefixLen + textLen + 1 > columns
+		}
+
+		// Cursor in middle of max-width row - no extra space added, no overflow
+		expect(checkWouldOverflow(80, false, 2, 78)).toBe(false)
+		expect(checkWouldOverflow(80, false, 2, 100)).toBe(false)
+	})
+
+	it("should correctly identify cursor at end of row", () => {
+		// Simulates the cursorAtEnd check
+		const isCursorAtEnd = (cursorColInRow: number, textLen: number): boolean => {
+			return cursorColInRow >= textLen
+		}
+
+		expect(isCursorAtEnd(5, 5)).toBe(true) // cursor at position 5, text length 5
+		expect(isCursorAtEnd(10, 5)).toBe(true) // cursor beyond text (clamped case)
+		expect(isCursorAtEnd(4, 5)).toBe(false) // cursor before end
+		expect(isCursorAtEnd(0, 0)).toBe(true) // empty text, cursor at start/end
+	})
+})

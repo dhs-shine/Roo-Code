@@ -5,7 +5,8 @@
  * Based on ink-multiline-input but simplified for our needs.
  *
  * Key behaviors:
- * - Ctrl+Enter: Add new line
+ * - Option+Enter (macOS) / Alt+Enter: Add new line (works reliably)
+ * - Shift+Enter: Add new line (requires terminal support for kitty keyboard protocol)
  * - Enter: Submit
  * - Backspace at start of line: Merge with previous line
  * - Escape: Clear all lines
@@ -25,7 +26,7 @@ export interface MultilineTextInputProps {
 	 */
 	onChange: (value: string) => void
 	/**
-	 * Called when user submits (Enter without Ctrl)
+	 * Called when user submits (Enter)
 	 */
 	onSubmit?: (value: string) => void
 	/**
@@ -58,10 +59,6 @@ export interface MultilineTextInputProps {
 	 * Prompt character for the first line
 	 */
 	prompt?: string
-	/**
-	 * Indent string for continuation lines
-	 */
-	continuationIndent?: string
 	/**
 	 * Terminal width in columns - used for proper line wrapping
 	 * If not provided, lines won't be wrapped
@@ -125,7 +122,7 @@ interface VisualRow {
  * in the middle of words.
  */
 function wrapLine(lineText: string, logicalLineIndex: number, availableWidth: number): VisualRow[] {
-	if (availableWidth <= 0 || lineText.length <= availableWidth) {
+	if (availableWidth <= 0 || lineText.length < availableWidth) {
 		return [
 			{
 				text: lineText,
@@ -142,7 +139,7 @@ function wrapLine(lineText: string, logicalLineIndex: number, availableWidth: nu
 	let isFirst = true
 
 	while (remaining.length > 0) {
-		if (remaining.length <= availableWidth) {
+		if (remaining.length < availableWidth) {
 			// Remaining text fits in one row
 			rows.push({
 				text: remaining,
@@ -199,7 +196,6 @@ export function MultilineTextInput({
 	isActive = true,
 	showCursor = true,
 	prompt = "> ",
-	continuationIndent = "  ",
 	columns,
 }: MultilineTextInputProps) {
 	const [cursorIndex, setCursorIndex] = useState(value.length)
@@ -210,8 +206,18 @@ export function MultilineTextInput({
 	const valueRef = useRef(value)
 	const cursorIndexRef = useRef(cursorIndex)
 
-	// Keep refs in sync with state/props - these updates are synchronous
-	valueRef.current = value
+	// Track the previous value prop to detect actual changes from the parent
+	const prevValuePropRef = useRef(value)
+
+	// Only sync valueRef when the value prop actually changes from the parent.
+	// This prevents overwriting our optimistic updates during re-renders
+	// triggered by internal state changes (like setCursorIndex) before the
+	// parent has processed our onChange call.
+	if (value !== prevValuePropRef.current) {
+		valueRef.current = value
+		prevValuePropRef.current = value
+	}
+	// cursorIndex is internal state, safe to sync on every render
 	cursorIndexRef.current = cursorIndex
 
 	// Clamp cursor if value changes externally
@@ -239,8 +245,20 @@ export function MultilineTextInput({
 				return
 			}
 
-			// Ctrl+Enter: add new line
-			if (key.return && key.ctrl) {
+			// Option+Enter (macOS) / Alt+Enter / Shift+Enter: add new line
+			// When Option/Alt is held, the terminal sends \r but key.return is false.
+			// This allows us to distinguish it from a regular Enter.
+			// Also support various terminal encodings for Shift+Enter.
+			const isModifiedEnter =
+				(input === "\r" && !key.return) || // Option+Enter on macOS sends \r but key.return=false
+				(key.return && key.shift) || // Shift+Enter if terminal reports modifiers
+				input === "\x1b[13;2u" || // CSI u encoding for Shift+Enter
+				input === "\x1b[27;2;13~" || // xterm modifyOtherKeys encoding for Shift+Enter
+				input === "\x1b\r" || // Some terminals send ESC+CR for Shift+Enter
+				input === "\x1bOM" || // Some terminals
+				(input.startsWith("\x1b[") && input.includes(";2") && input.endsWith("u")) // General CSI u with shift modifier
+
+			if (isModifiedEnter) {
 				const newValue =
 					currentValue.slice(0, currentCursorIndex) + "\n" + currentValue.slice(currentCursorIndex)
 				const newCursorIndex = currentCursorIndex + 1
@@ -252,7 +270,7 @@ export function MultilineTextInput({
 				return
 			}
 
-			// Enter (without Ctrl): submit
+			// Enter: submit
 			if (key.return) {
 				onSubmit?.(currentValue)
 				return
@@ -373,11 +391,11 @@ export function MultilineTextInput({
 	const visualRows = useMemo(() => {
 		const rows: VisualRow[] = []
 		const promptLen = prompt.length
-		const indentLen = continuationIndent.length
 
 		for (let i = 0; i < lines.length; i++) {
 			const lineText = lines[i]!
-			const prefixLen = i === 0 ? promptLen : indentLen
+			// All rows use the same prefix width (prompt length) for consistent alignment
+			const prefixLen = promptLen
 			// Calculate available width for text (terminal width minus prefix)
 			// Use a large number if columns is not provided
 			const availableWidth = columns ? Math.max(1, columns - prefixLen) : 10000
@@ -387,18 +405,18 @@ export function MultilineTextInput({
 		}
 
 		return rows
-	}, [lines, columns, prompt.length, continuationIndent.length])
+	}, [lines, columns, prompt.length])
 
 	// Render a visual row with optional cursor
+	// Uses a two-column flex layout to ensure all text is vertically aligned:
+	// - Column 1: Fixed width for the prompt (only shown on first row)
+	// - Column 2: Text content
 	const renderVisualRow = useCallback(
 		(row: VisualRow, rowIndex: number) => {
 			const isPlaceholder = !value && !isActive && row.logicalLineIndex === 0
-			const isFirstLine = row.logicalLineIndex === 0
-			// Only show prefix on the first visual row of each logical line:
-			// - First line gets the prompt (e.g., "> ")
-			// - User-created continuation lines (via Ctrl+Enter) get continuationIndent
-			// - Wrapped rows (same logical line) get no prefix to avoid copy artifacts
-			const linePrefix = row.isFirstRowOfLine ? (isFirstLine ? prompt : continuationIndent) : ""
+			const promptWidth = prompt.length
+			// Only show the prompt on the very first visual row (first row of first line)
+			const showPrompt = row.logicalLineIndex === 0 && row.isFirstRowOfLine
 
 			// Check if cursor is on this visual row
 			let hasCursor = false
@@ -424,12 +442,29 @@ export function MultilineTextInput({
 
 			if (hasCursor) {
 				const beforeCursor = row.text.slice(0, cursorColInRow)
-				const cursorChar = row.text[cursorColInRow] || " "
-				const afterCursor = row.text.slice(cursorColInRow + 1)
+				const cursorAtEnd = cursorColInRow >= row.text.length
+				const cursorChar = cursorAtEnd ? " " : row.text[cursorColInRow]!
+				const afterCursor = cursorAtEnd ? "" : row.text.slice(cursorColInRow + 1)
+
+				// Check if adding cursor space at end would overflow the line width.
+				// When cursor is at the end of a max-width row, rendering an extra space
+				// would push the content beyond the terminal width, causing visual shift.
+				const wouldOverflow =
+					columns !== undefined && cursorAtEnd && promptWidth + row.text.length + 1 > columns
+
+				if (wouldOverflow) {
+					// Don't add extra space - cursor will appear at start of next row when text wraps
+					return (
+						<Box key={rowIndex} flexDirection="row">
+							<Box width={promptWidth}>{showPrompt && <Text>{prompt}</Text>}</Box>
+							<Text>{row.text}</Text>
+						</Box>
+					)
+				}
 
 				return (
-					<Box key={rowIndex}>
-						<Text dimColor={!isFirstLine}>{linePrefix}</Text>
+					<Box key={rowIndex} flexDirection="row">
+						<Box width={promptWidth}>{showPrompt && <Text>{prompt}</Text>}</Box>
 						<Text>{beforeCursor}</Text>
 						<Text inverse>{cursorChar}</Text>
 						<Text>{afterCursor}</Text>
@@ -437,14 +472,18 @@ export function MultilineTextInput({
 				)
 			}
 
+			// For rows without cursor, use a space for empty text to ensure the row has height
+			// This fixes the issue where empty newlines don't expand the component height
+			const displayText = row.text.length === 0 ? " " : row.text
+
 			return (
-				<Box key={rowIndex}>
-					<Text dimColor={!isFirstLine}>{linePrefix}</Text>
-					<Text dimColor={isPlaceholder}>{row.text}</Text>
+				<Box key={rowIndex} flexDirection="row">
+					<Box width={promptWidth}>{showPrompt && <Text>{prompt}</Text>}</Box>
+					<Text dimColor={isPlaceholder}>{displayText}</Text>
 				</Box>
 			)
 		},
-		[prompt, continuationIndent, cursorPosition, value, isActive, visualRows],
+		[prompt, cursorPosition, value, isActive, visualRows, columns],
 	)
 
 	return <Box flexDirection="column">{visualRows.map((row, index) => renderVisualRow(row, index))}</Box>
