@@ -2828,7 +2828,7 @@ export const webviewMessageHandler = async (
 
 		case "switchTab": {
 			if (message.tab) {
-				// Capture tab shown event for all switchTab messages (which are user-initiated)
+				// Capture tab shown event for all switchTab messages (which are user-initiated).
 				if (TelemetryService.hasInstance()) {
 					TelemetryService.instance.captureTabShown(message.tab)
 				}
@@ -2847,7 +2847,6 @@ export const webviewMessageHandler = async (
 				const { getCommands } = await import("../../services/command/commands")
 				const commands = await getCommands(getCurrentCwd())
 
-				// Convert to the format expected by the frontend
 				const commandList = commands.map((command) => ({
 					name: command.name,
 					source: command.source,
@@ -2856,34 +2855,20 @@ export const webviewMessageHandler = async (
 					argumentHint: command.argumentHint,
 				}))
 
-				await provider.postMessageToWebview({
-					type: "commands",
-					commands: commandList,
-				})
+				await provider.postMessageToWebview({ type: "commands", commands: commandList })
 			} catch (error) {
 				provider.log(`Error fetching commands: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`)
-				// Send empty array on error
-				await provider.postMessageToWebview({
-					type: "commands",
-					commands: [],
-				})
+				await provider.postMessageToWebview({ type: "commands", commands: [] })
 			}
 			break
 		}
 		case "requestModes": {
 			try {
 				const modes = await provider.getModes()
-				await provider.postMessageToWebview({
-					type: "modes",
-					modes,
-				})
+				await provider.postMessageToWebview({ type: "modes", modes })
 			} catch (error) {
 				provider.log(`Error fetching modes: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`)
-				// Send empty array on error
-				await provider.postMessageToWebview({
-					type: "modes",
-					modes: [],
-				})
+				await provider.postMessageToWebview({ type: "modes", modes: [] })
 			}
 			break
 		}

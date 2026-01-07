@@ -180,6 +180,8 @@ export interface WebviewMessage {
 		| "downloadErrorDiagnostics"
 		| "requestClaudeCodeRateLimits"
 		| "refreshCustomTools"
+		| "requestModes"
+		| "switchMode"
 	text?: string
 	editedMessageContent?: string
 	tab?: "settings" | "history" | "mcp" | "modes" | "chat" | "marketplace" | "cloud"

@@ -132,6 +132,7 @@ export interface ExtensionMessage {
 		| "browserSessionNavigate"
 		| "claudeCodeRateLimits"
 		| "customToolsResult"
+		| "modes"
 	text?: string
 	payload?: any // Add a generic payload for now, can refine later
 	// Checkpoint warning message
@@ -220,6 +221,7 @@ export interface ExtensionMessage {
 	isBrowserSessionActive?: boolean // For browser session panel updates
 	stepIndex?: number // For browserSessionNavigate: the target step index to display
 	tools?: SerializedCustomToolDefinition[] // For customToolsResult
+	modes?: { slug: string; name: string }[] // For modes response
 }
 
 export type ExtensionState = Pick<
