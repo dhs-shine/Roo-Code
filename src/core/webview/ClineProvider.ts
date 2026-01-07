@@ -917,7 +917,12 @@ export class ClineProvider
 							// The task will continue with the current/default configuration.
 						}
 					} catch (error) {
-						// The task will continue with the current/default configuration.
+						// Log the error but continue with task restoration.
+						this.log(
+							`Failed to restore API configuration for mode '${historyItem.mode}': ${
+								error instanceof Error ? error.message : String(error)
+							}. Continuing with default configuration.`,
+						)
 					}
 				}
 			}

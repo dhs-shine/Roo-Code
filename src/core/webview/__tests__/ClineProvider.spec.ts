@@ -889,6 +889,7 @@ describe("ClineProvider", () => {
 			listConfig: vi.fn().mockResolvedValue([profile]),
 			activateProfile: vi.fn().mockResolvedValue(profile),
 			setModeConfig: vi.fn(),
+			getProfile: vi.fn().mockResolvedValue(profile),
 		} as any
 
 		// Switch to architect mode
@@ -1610,6 +1611,7 @@ describe("ClineProvider", () => {
 				listConfig: vi.fn().mockResolvedValue([profile]),
 				activateProfile: vi.fn().mockResolvedValue(profile),
 				setModeConfig: vi.fn(),
+				getProfile: vi.fn().mockResolvedValue(profile),
 			} as any
 
 			// Switch to architect mode
