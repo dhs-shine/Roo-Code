@@ -22,8 +22,6 @@ export interface AutocompleteInputProps<T extends AutocompleteItem = Autocomplet
 	onPickerStateChange?: (state: AutocompletePickerState<T>) => void
 	/** Prompt character for the first line (default: "> ") */
 	prompt?: string
-	/** Indent string for continuation lines (default: "  ") */
-	continuationIndent?: string
 }
 
 /**
@@ -54,11 +52,11 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 		onSelect,
 		onPickerStateChange,
 		prompt = "> ",
-		continuationIndent = "  ",
 	}: AutocompleteInputProps<T>,
 	ref: Ref<AutocompleteInputHandle<T>>,
 ) {
 	const [inputValue, setInputValue] = useState("")
+
 	// Counter to force re-mount of MultilineTextInput to move cursor to end
 	const [inputKeyCounter, setInputKeyCounter] = useState(0)
 
@@ -268,7 +266,6 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 			isActive={isActive}
 			showCursor={true}
 			prompt={prompt}
-			continuationIndent={continuationIndent}
 			columns={columns}
 		/>
 	)
