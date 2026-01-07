@@ -1,5 +1,7 @@
 import type { ClineAsk, ClineSay, TodoItem } from "@roo-code/types"
 
+import type { GlobalCommandAction } from "../globalCommands.js"
+
 // Re-export TodoItem for convenience
 export type { TodoItem }
 
@@ -86,6 +88,8 @@ export interface SlashCommandResult {
 	description?: string
 	argumentHint?: string
 	source: "global" | "project" | "built-in"
+	/** Action to trigger for CLI global commands (e.g., clearTask for /new) */
+	action?: GlobalCommandAction
 }
 
 export interface ModeResult {

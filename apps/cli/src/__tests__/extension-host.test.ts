@@ -433,24 +433,6 @@ describe("ExtensionHost", () => {
 
 			expect(handleMsgUpdatedSpy).toHaveBeenCalled()
 		})
-
-		it("should route action messages to handleActionMessage", () => {
-			const host = createTestHost()
-			const handleActionSpy = spyOnPrivate(host, "handleActionMessage")
-
-			callPrivate(host, "handleExtensionMessage", { type: "action", action: "test" })
-
-			expect(handleActionSpy).toHaveBeenCalled()
-		})
-
-		it("should route invoke messages to handleInvokeMessage", () => {
-			const host = createTestHost()
-			const handleInvokeSpy = spyOnPrivate(host, "handleInvokeMessage")
-
-			callPrivate(host, "handleExtensionMessage", { type: "invoke", invoke: "test" })
-
-			expect(handleInvokeSpy).toHaveBeenCalled()
-		})
 	})
 
 	describe("handleSayMessage", () => {

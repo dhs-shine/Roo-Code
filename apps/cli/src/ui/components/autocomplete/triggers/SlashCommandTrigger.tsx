@@ -16,6 +16,8 @@ export interface SlashCommandResult extends AutocompleteItem {
 	argumentHint?: string
 	/** Source of the command */
 	source: "global" | "project" | "built-in"
+	/** Action to trigger for CLI global commands (only present for action commands) */
+	action?: string
 }
 
 /**
@@ -92,8 +94,15 @@ export function createSlashCommandTrigger(config: SlashCommandTriggerConfig): Au
 		},
 
 		renderItem: (item: SlashCommandResult, isSelected: boolean) => {
-			// Source indicator icons
-			const sourceIcon = item.source === "built-in" ? "⚡" : item.source === "project" ? "📁" : "🌐"
+			// Source indicator icons:
+			// ⚙️ for action commands (CLI global), ⚡ built-in, 📁 project, 🌐 global (content)
+			const sourceIcon = item.action
+				? "⚙️"
+				: item.source === "built-in"
+					? "⚡"
+					: item.source === "project"
+						? "📁"
+						: "🌐"
 
 			return (
 				<Box paddingLeft={2}>

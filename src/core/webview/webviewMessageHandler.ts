@@ -12,6 +12,7 @@ import {
 	type ClineMessage,
 	type TelemetrySetting,
 	type UserSettingsConfig,
+	type ModelRecord,
 	TelemetryEventName,
 	RooCodeSettings,
 	ExperimentId,
@@ -29,7 +30,7 @@ import { handleCheckpointRestoreOperation } from "./checkpointRestoreHandler"
 import { generateErrorDiagnostics } from "./diagnosticsHandler"
 import { changeLanguage, t } from "../../i18n"
 import { Package } from "../../shared/package"
-import { type RouterName, type ModelRecord, toRouterName } from "../../shared/api"
+import { type RouterName, toRouterName } from "../../shared/api"
 import { MessageEnhancer } from "./messageEnhancer"
 
 import {

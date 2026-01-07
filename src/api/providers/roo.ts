@@ -2,11 +2,12 @@ import { Anthropic } from "@anthropic-ai/sdk"
 import OpenAI from "openai"
 
 import { rooDefaultModelId, getApiProtocol, type ImageGenerationApiMethod } from "@roo-code/types"
-import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
 import { CloudService } from "@roo-code/cloud"
 
+import { NativeToolCallParser } from "../../core/assistant-message/NativeToolCallParser"
+
 import { Package } from "../../shared/package"
-import type { ApiHandlerOptions, ModelRecord } from "../../shared/api"
+import type { ApiHandlerOptions } from "../../shared/api"
 import { ApiStream } from "../transform/stream"
 import { getModelParams } from "../transform/model-params"
 import { convertToOpenAiMessages } from "../transform/openai-format"

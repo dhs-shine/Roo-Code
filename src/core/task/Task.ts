@@ -1688,6 +1688,16 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 	}
 
 	private async resumeTaskFromHistory() {
+		// Reset abort and streaming state to ensure clean continuation.
+		// This matches the behavior in resumeAfterDelegation() and prevents
+		// corrupted state from a previous cancellation.
+		this.abort = false
+		this.abandoned = false
+		this.abortReason = undefined
+		this.didFinishAbortingStream = false
+		this.isStreaming = false
+		this.isWaitingForFirstChunk = false
+
 		if (this.enableBridge) {
 			try {
 				await BridgeOrchestrator.subscribeToTask(this)

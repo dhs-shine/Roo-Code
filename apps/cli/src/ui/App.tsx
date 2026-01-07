@@ -44,6 +44,7 @@ import type {
 	SlashCommandResult,
 	ModeResult,
 } from "./types.js"
+import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
 
 // Layout constants
 const PICKER_HEIGHT = 10 // Max height for picker when open
@@ -333,7 +334,13 @@ function AppInner({
 		})
 
 		const slashCommandTrigger = createSlashCommandTrigger({
-			getCommands: () => allSlashCommandsRef.current.map(toSlashCommandResult),
+			getCommands: () => {
+				// Merge CLI global commands with extension commands
+				const extensionCommands = allSlashCommandsRef.current.map(toSlashCommandResult)
+				const globalCommands = getGlobalCommandsForAutocomplete().map(toSlashCommandResult)
+				// Global commands appear first, then extension commands
+				return [...globalCommands, ...extensionCommands]
+			},
 		})
 
 		const modeTrigger = createModeTrigger({
@@ -815,7 +822,6 @@ function AppInner({
 		}
 	}, []) // Run once on mount
 
-	// Handle user input submission
 	const handleSubmit = useCallback(
 		async (text: string) => {
 			if (!hostRef.current || !text.trim()) {
@@ -828,18 +834,34 @@ function AppInner({
 				return
 			}
 
+			// Check for CLI global action commands (e.g., /new).
+			if (trimmedText.startsWith("/")) {
+				const commandMatch = trimmedText.match(/^\/(\w+)(?:\s|$)/)
+
+				if (commandMatch && commandMatch[1]) {
+					const globalCommand = getGlobalCommand(commandMatch[1])
+
+					if (globalCommand?.action === "clearTask") {
+						// Reset CLI state and send clearTask to extension.
+						useCLIStore.getState().reset()
+						// Reset component-level refs to avoid stale message tracking.
+						seenMessageIds.current.clear()
+						firstTextMessageSkipped.current = false
+						hostRef.current.sendToExtension({ type: "clearTask" })
+						return
+					}
+				}
+			}
+
 			if (pendingAsk) {
-				addMessage({
-					id: randomUUID(),
-					role: "user",
-					content: trimmedText,
-				})
+				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
 
 				hostRef.current.sendToExtension({
 					type: "askResponse",
 					askResponse: "messageResponse",
 					text: trimmedText,
 				})
+
 				setPendingAsk(null)
 				setShowCustomInput(false)
 				isTransitioningToCustomInput.current = false
@@ -847,12 +869,7 @@ function AppInner({
 			} else if (!hasStartedTask) {
 				setHasStartedTask(true)
 				setLoading(true)
-
-				addMessage({
-					id: randomUUID(),
-					role: "user",
-					content: trimmedText,
-				})
+				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
 
 				try {
 					await hostRef.current.runTask(trimmedText)
@@ -864,13 +881,9 @@ function AppInner({
 				if (isComplete) {
 					setComplete(false)
 				}
-				setLoading(true)
 
-				addMessage({
-					id: randomUUID(),
-					role: "user",
-					content: trimmedText,
-				})
+				setLoading(true)
+				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
 
 				hostRef.current.sendToExtension({
 					type: "askResponse",
@@ -894,24 +907,22 @@ function AppInner({
 
 	// Handle approval (Y key)
 	const handleApprove = useCallback(() => {
-		if (!hostRef.current) return
+		if (!hostRef.current) {
+			return
+		}
 
-		hostRef.current.sendToExtension({
-			type: "askResponse",
-			askResponse: "yesButtonClicked",
-		})
+		hostRef.current.sendToExtension({ type: "askResponse", askResponse: "yesButtonClicked" })
 		setPendingAsk(null)
 		setLoading(true)
 	}, [setPendingAsk, setLoading])
 
 	// Handle rejection (N key)
 	const handleReject = useCallback(() => {
-		if (!hostRef.current) return
+		if (!hostRef.current) {
+			return
+		}
 
-		hostRef.current.sendToExtension({
-			type: "askResponse",
-			askResponse: "noButtonClicked",
-		})
+		hostRef.current.sendToExtension({ type: "askResponse", askResponse: "noButtonClicked" })
 		setPendingAsk(null)
 		setLoading(true)
 	}, [setPendingAsk, setLoading])
@@ -920,6 +931,7 @@ function AppInner({
 	useInput((input) => {
 		if (pendingAsk && pendingAsk.type !== "followup") {
 			const lower = input.toLowerCase()
+
 			if (lower === "y") {
 				handleApprove()
 			} else if (lower === "n") {
@@ -930,9 +942,7 @@ function AppInner({
 
 	// Handle picker state changes from AutocompleteInput
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const handlePickerStateChange = useCallback((state: AutocompletePickerState<any>) => {
-		setPickerState(state)
-	}, [])
+	const handlePickerStateChange = useCallback((state: AutocompletePickerState<any>) => setPickerState(state), [])
 
 	// Handle item selection from external PickerSelect
 	const handlePickerSelect = useCallback(
@@ -941,13 +951,12 @@ function AppInner({
 			// Check if this is a mode selection
 			if (pickerState.activeTrigger?.id === "mode" && item && typeof item === "object" && "slug" in item) {
 				const modeItem = item as ModeItem
+
 				// Send mode change message to extension
 				if (hostRef.current) {
-					hostRef.current.sendToExtension({
-						type: "switchMode",
-						mode: modeItem.slug,
-					})
+					hostRef.current.sendToExtension({ type: "switchMode", mode: modeItem.slug })
 				}
+
 				// Close the picker
 				autocompleteRef.current?.closePicker()
 				followupAutocompleteRef.current?.closePicker()
@@ -1379,13 +1388,20 @@ function parseMarkdownChecklist(markdown: string): TodoItem[] {
 
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i]
-		if (!line) continue
+
+		if (!line) {
+			continue
+		}
 
 		const trimmedLine = line.trim()
-		if (!trimmedLine) continue
+
+		if (!trimmedLine) {
+			continue
+		}
 
 		// Match markdown checkbox patterns
 		const checkboxMatch = trimmedLine.match(/^\[([x\-\s])\]\s*(.+)$/i)
+
 		if (checkboxMatch) {
 			const statusChar = checkboxMatch[1] ?? " "
 			const content = checkboxMatch[2] ?? ""
@@ -1397,11 +1413,7 @@ function parseMarkdownChecklist(markdown: string): TodoItem[] {
 				status = "in_progress"
 			}
 
-			todos.push({
-				id: `todo-${i}`,
-				content: content.trim(),
-				status,
-			})
+			todos.push({ id: `todo-${i}`, content: content.trim(), status })
 		}
 	}
 

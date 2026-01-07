@@ -7,12 +7,13 @@ import axios from "axios"
 import {
 	type ProviderSettingsEntry,
 	type ClineMessage,
+	type ExtensionMessage,
+	type ExtensionState,
 	ORGANIZATION_ALLOW_ALL,
 	DEFAULT_CHECKPOINT_TIMEOUT_SECONDS,
 } from "@roo-code/types"
 import { TelemetryService } from "@roo-code/telemetry"
 
-import { ExtensionMessage, ExtensionState } from "../../../shared/ExtensionMessage"
 import { defaultModeSlug } from "../../../shared/modes"
 import { experimentDefault } from "../../../shared/experiments"
 import { setTtsEnabled } from "../../../utils/tts"

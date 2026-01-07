@@ -13,10 +13,11 @@ import { createRequire } from "module"
 import path from "path"
 import { fileURLToPath } from "url"
 import fs from "fs"
+import os from "os"
 import readline from "readline"
 
+import { ProviderName, ReasoningEffortExtended, RooCodeSettings, ExtensionMessage } from "@roo-code/types"
 import { createVSCodeAPI, setRuntimeConfigValues } from "@roo-code/vscode-shim"
-import { ProviderName, ReasoningEffortExtended, RooCodeSettings } from "@roo-code/types"
 
 // Get the CLI package root directory (for finding node_modules/@vscode/ripgrep)
 // When bundled, import.meta.url points to dist/index.js, so go up to package root
@@ -53,6 +54,8 @@ interface WebviewViewProvider {
 	resolveWebviewView?(webviewView: unknown, context: unknown, token: unknown): void | Promise<void>
 }
 
+const DEBUG_LOG_PATH = path.join(os.homedir(), ".roo", "cli-debug.log")
+
 export class ExtensionHost extends EventEmitter {
 	private vscode: ReturnType<typeof createVSCodeAPI> | null = null
 	private extensionModule: ExtensionModule | null = null
@@ -61,7 +64,7 @@ export class ExtensionHost extends EventEmitter {
 	private options: ExtensionHostOptions
 	private isWebviewReady = false
 	private pendingMessages: unknown[] = []
-	private messageListener: ((message: unknown) => void) | null = null
+	private messageListener: ((message: ExtensionMessage) => void) | null = null
 
 	private originalConsole: {
 		log: typeof console.log
@@ -85,9 +88,6 @@ export class ExtensionHost extends EventEmitter {
 	// Track streamed content by ts for delta computation
 	private streamedContent: Map<number, { text: string; headerShown: boolean }> = new Map()
 
-	// Track message processing for verbose debug output
-	private processedMessageCount = 0
-
 	// Track if we're currently streaming a message (to manage newlines)
 	private currentlyStreamingTs: number | null = null
 
@@ -97,28 +97,64 @@ export class ExtensionHost extends EventEmitter {
 	constructor(options: ExtensionHostOptions) {
 		super()
 		this.options = options
-		// Initialize currentMode from options to track mode changes
 		this.currentMode = options.mode || null
 	}
 
-	private log(...args: unknown[]): void {
-		if (this.options.verbose) {
-			// Use original console if available to avoid quiet mode suppression
-			const logFn = this.originalConsole?.log || console.log
-			logFn("[ExtensionHost]", ...args)
+	/**
+	 * Write debug log entry to ~/.roo/cli-debug.log
+	 * This avoids console output which breaks the TUI.
+	 */
+	private log(message: string, data?: unknown): void {
+		try {
+			const logDir = path.dirname(DEBUG_LOG_PATH)
+
+			if (!fs.existsSync(logDir)) {
+				fs.mkdirSync(logDir, { recursive: true })
+			}
+
+			const timestamp = new Date().toISOString()
+
+			const entry = data
+				? `[${timestamp}] ${message}: ${JSON.stringify(data, null, 2)}\n`
+				: `[${timestamp}] ${message}\n`
+
+			fs.appendFileSync(DEBUG_LOG_PATH, entry)
+		} catch {
+			// NO-OP
 		}
 	}
 
 	/**
-	 * Suppress Node.js warnings (like MaxListenersExceededWarning)
-	 * This is called regardless of quiet mode to prevent warnings from interrupting output
+	 * Get the shape (keys) of an object for logging
 	 */
+	private getMessageShape(msg: unknown): Record<string, string> {
+		if (!msg || typeof msg !== "object") {
+			return { _type: typeof msg }
+		}
+
+		const shape: Record<string, string> = {}
+
+		for (const [key, value] of Object.entries(msg as Record<string, unknown>)) {
+			if (value === null) {
+				shape[key] = "null"
+			} else if (Array.isArray(value)) {
+				shape[key] = `array[${value.length}]`
+			} else if (typeof value === "object") {
+				shape[key] = `object{${Object.keys(value).join(",")}}`
+			} else {
+				shape[key] = typeof value
+			}
+		}
+
+		return shape
+	}
+
 	private suppressNodeWarnings(): void {
-		// Suppress process warnings (like MaxListenersExceededWarning)
+		// Suppress process warnings (like MaxListenersExceededWarning).
 		this.originalProcessEmitWarning = process.emitWarning
 		process.emitWarning = () => {}
 
-		// Also suppress via the warning event handler
+		// Also suppress via the warning event handler.
 		process.on("warning", () => {})
 	}
 
@@ -169,8 +205,6 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	async activate(): Promise<void> {
-		this.log("Activating extension...")
-
 		// Suppress Node.js warnings (like MaxListenersExceededWarning) before anything else
 		this.suppressNodeWarnings()
 
@@ -179,14 +213,13 @@ export class ExtensionHost extends EventEmitter {
 
 		// Verify extension path exists
 		const bundlePath = path.join(this.options.extensionPath, "extension.js")
+
 		if (!fs.existsSync(bundlePath)) {
 			this.restoreConsole()
 			throw new Error(`Extension bundle not found at: ${bundlePath}`)
 		}
 
 		// 1. Create VSCode API mock
-		this.log("Creating VSCode API mock...")
-		this.log("Using appRoot:", CLI_PACKAGE_ROOT)
 		this.vscode = createVSCodeAPI(
 			this.options.extensionPath,
 			this.options.workspacePath,
@@ -228,8 +261,6 @@ export class ExtensionHost extends EventEmitter {
 			require: require,
 		} as unknown as NodeJS.Module
 
-		this.log("Loading extension bundle from:", bundlePath)
-
 		// 5. Load extension bundle
 		try {
 			this.extensionModule = require(bundlePath) as ExtensionModule
@@ -244,12 +275,9 @@ export class ExtensionHost extends EventEmitter {
 		// 6. Restore module resolution
 		Module._resolveFilename = originalResolve
 
-		this.log("Activating extension...")
-
 		// 7. Activate extension
 		try {
 			this.extensionAPI = await this.extensionModule.activate(this.vscode.context)
-			this.log("Extension activated successfully")
 		} catch (error) {
 			throw new Error(`Failed to activate extension: ${error instanceof Error ? error.message : String(error)}`)
 		}
@@ -260,18 +288,13 @@ export class ExtensionHost extends EventEmitter {
 	 * This is triggered when the extension registers its sidebar webview provider
 	 */
 	registerWebviewProvider(viewId: string, provider: WebviewViewProvider): void {
-		this.log(`Webview provider registered: ${viewId}`)
 		this.webviewProviders.set(viewId, provider)
-
-		// The WindowAPI will call resolveWebviewView automatically
-		// We don't need to do anything here
 	}
 
 	/**
 	 * Called when a webview provider is disposed
 	 */
 	unregisterWebviewProvider(viewId: string): void {
-		this.log(`Webview provider unregistered: ${viewId}`)
 		this.webviewProviders.delete(viewId)
 	}
 
@@ -288,11 +311,8 @@ export class ExtensionHost extends EventEmitter {
 	 * This indicates the webview is ready to receive messages
 	 */
 	markWebviewReady(): void {
-		this.log("Webview marked as ready")
 		this.isWebviewReady = true
 		this.emit("webviewReady")
-
-		// Flush any pending messages
 		this.flushPendingMessages()
 	}
 
@@ -301,10 +321,10 @@ export class ExtensionHost extends EventEmitter {
 	 */
 	private flushPendingMessages(): void {
 		if (this.pendingMessages.length > 0) {
-			this.log(`Flushing ${this.pendingMessages.length} pending messages`)
 			for (const message of this.pendingMessages) {
 				this.emit("webviewMessage", message)
 			}
+
 			this.pendingMessages = []
 		}
 	}
@@ -314,12 +334,10 @@ export class ExtensionHost extends EventEmitter {
 	 */
 	sendToExtension(message: unknown): void {
 		if (!this.isWebviewReady) {
-			this.log("Queueing message (webview not ready):", message)
 			this.pendingMessages.push(message)
 			return
 		}
 
-		this.log("Sending message to extension:", message)
 		this.emit("webviewMessage", message)
 	}
 
@@ -360,6 +378,7 @@ export class ExtensionHost extends EventEmitter {
 			xai: "XAI_API_KEY",
 			groq: "GROQ_API_KEY",
 		}
+
 		const envVar = envVarMap[provider.toLowerCase()] || `${provider.toUpperCase().replace(/-/g, "_")}_API_KEY`
 		return process.env[envVar]
 	}
@@ -528,15 +547,8 @@ export class ExtensionHost extends EventEmitter {
 		return config
 	}
 
-	/**
-	 * Run a task with the given prompt
-	 */
 	async runTask(prompt: string): Promise<void> {
-		this.log("Running task:", prompt)
-
-		// Wait for webview to be ready
 		if (!this.isWebviewReady) {
-			this.log("Waiting for webview to be ready...")
 			await new Promise<void>((resolve) => {
 				this.once("webviewReady", resolve)
 			})
@@ -549,8 +561,6 @@ export class ExtensionHost extends EventEmitter {
 		// In non-interactive mode (-y flag), enable auto-approval for everything
 		// In interactive mode (default), we'll prompt the user for each action
 		if (this.options.nonInteractive) {
-			this.log("Non-interactive mode: enabling auto-approval settings...")
-
 			const settings: RooCodeSettings = {
 				autoApprovalEnabled: true,
 				alwaysAllowReadOnly: true,
@@ -572,8 +582,6 @@ export class ExtensionHost extends EventEmitter {
 			this.sendToExtension({ type: "updateSettings", updatedSettings: settings })
 			await new Promise<void>((resolve) => setTimeout(resolve, 100))
 		} else {
-			this.log("Interactive mode: user will be prompted for approvals...")
-
 			const settings: RooCodeSettings = {
 				autoApprovalEnabled: false,
 			}
@@ -585,7 +593,6 @@ export class ExtensionHost extends EventEmitter {
 
 		// Always send API configuration - it may include API key from environment variables
 		const apiConfig = this.buildApiConfiguration()
-		this.log("Sending initial API configuration:", JSON.stringify(apiConfig))
 		this.sendToExtension({ type: "updateSettings", updatedSettings: apiConfig })
 		await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
@@ -597,52 +604,64 @@ export class ExtensionHost extends EventEmitter {
 	 * Set up listener for messages from the extension
 	 */
 	private setupMessageListener(): void {
-		this.messageListener = (message: unknown) => {
-			this.handleExtensionMessage(message)
-		}
-
+		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
 		this.on("extensionWebviewMessage", this.messageListener)
 	}
 
-	/**
-	 * Handle messages from the extension
-	 */
-	private handleExtensionMessage(message: unknown): void {
-		const msg = message as Record<string, unknown>
+	private handleExtensionMessage(msg: ExtensionMessage): void {
+		// Log all incoming messages for debugging
+		this.log(`[MSG] type=${msg.type}`, this.getMessageShape(msg))
 
-		if (this.options.verbose) {
-			this.log("Received message from extension:", JSON.stringify(msg, null, 2))
+		// For state messages, log additional details about the state
+		if (msg.type === "state" && msg.state) {
+			const state = msg.state
+			// Extract model ID based on provider (different providers use different fields)
+			const apiConfig = state.apiConfiguration
+			let modelId = apiConfig?.apiModelId
+
+			if (apiConfig?.apiProvider === "openrouter") {
+				modelId = apiConfig?.openRouterModelId
+			} else if (apiConfig?.apiProvider === "openai") {
+				modelId = apiConfig?.openAiModelId
+			} else if (apiConfig?.apiProvider === "ollama") {
+				modelId = apiConfig?.ollamaModelId
+			}
+
+			this.log(`[STATE] mode=${state.mode}, clineMessages=${state.clineMessages?.length || 0}`, {
+				apiProvider: apiConfig?.apiProvider,
+				modelId: modelId,
+				mode: state.mode,
+				cliProvider: this.options.apiProvider,
+				cliModel: this.options.model,
+			})
+
+			// Log any ask messages in the state that might indicate resume
+			if (state.clineMessages) {
+				for (const clineMsg of state.clineMessages) {
+					if (clineMsg?.ask === "resume_task" || clineMsg?.ask === "resume_completed_task") {
+						this.log(`[RESUME DETECTED] ask=${clineMsg.ask}, ts=${clineMsg.ts}`)
+					}
+				}
+			}
 		}
 
-		// Handle different message types
 		switch (msg.type) {
 			case "state":
 				this.handleStateMessage(msg)
 				break
 
 			case "messageUpdated":
-				// This is the streaming update - handle individual message updates
+				// This is the streaming update - handle individual message updates.
 				this.handleMessageUpdated(msg)
 				break
 
-			case "action":
-				this.handleActionMessage(msg)
-				break
-
-			case "invoke":
-				this.handleInvokeMessage(msg)
-				break
-
 			case "modes":
-				// Forward modes list to the TUI
+				// Forward modes list to the TUI.
 				this.emit("extensionWebviewMessage", msg)
 				break
 
 			default:
-				// Log unknown message types in verbose mode
-				if (this.options.verbose) {
-					this.log("Unknown message type:", msg.type)
-				}
+			// NO-OP
 		}
 	}
 
@@ -655,6 +674,7 @@ export class ExtensionHost extends EventEmitter {
 		if (this.options.disableOutput) {
 			return
 		}
+
 		const text = args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
 		process.stdout.write(text + "\n")
 	}
@@ -668,65 +688,113 @@ export class ExtensionHost extends EventEmitter {
 		if (this.options.disableOutput) {
 			return
 		}
+
 		const text = args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
 		process.stderr.write(text + "\n")
 	}
 
 	/**
-	 * Handle state update messages from the extension
+	 * Get the expected model ID from CLI options
 	 */
-	private handleStateMessage(msg: Record<string, unknown>): void {
-		const state = msg.state as Record<string, unknown> | undefined
-		if (!state) return
+	private getExpectedModelId(): string | undefined {
+		return this.options.model
+	}
 
-		// Detect mode changes and re-apply API configuration
-		// This preserves the CLI-provided provider/model settings across mode switches
-		const newMode = state.mode as string | undefined
-		if (this.options.verbose) {
-			this.log(`State update: mode=${newMode}, currentMode=${this.currentMode}`)
+	/**
+	 * Get the current model ID from state's apiConfiguration
+	 */
+	private getStateModelId(apiConfig: Record<string, unknown> | undefined): string | undefined {
+		if (!apiConfig) {
+			return undefined
 		}
+
+		const provider = apiConfig.apiProvider as string | undefined
+		switch (provider) {
+			case "openrouter":
+				return apiConfig.openRouterModelId as string | undefined
+			case "openai":
+				return apiConfig.openAiModelId as string | undefined
+			case "ollama":
+				return apiConfig.ollamaModelId as string | undefined
+			case "litellm":
+				return apiConfig.litellmModelId as string | undefined
+			case "lmstudio":
+				return apiConfig.lmStudioModelId as string | undefined
+			case "huggingface":
+				return apiConfig.huggingFaceModelId as string | undefined
+			case "unbound":
+				return apiConfig.unboundModelId as string | undefined
+			case "requesty":
+				return apiConfig.requestyModelId as string | undefined
+			case "deepinfra":
+				return apiConfig.deepInfraModelId as string | undefined
+			case "vercel-ai-gateway":
+				return apiConfig.vercelAiGatewayModelId as string | undefined
+			case "io-intelligence":
+				return apiConfig.ioIntelligenceModelId as string | undefined
+			default:
+				return apiConfig.apiModelId as string | undefined
+		}
+	}
+
+	/**
+	 * Handle state update messages from the extension.
+	 */
+	private handleStateMessage(msg: ExtensionMessage): void {
+		const state = msg.state
+
+		if (!state) {
+			return
+		}
+
+		// Track current mode for mode switch detection (in tool execution).
+		const newMode = state.mode
+
 		if (newMode && this.currentMode !== null && this.currentMode !== newMode) {
-			const apiConfig = this.buildApiConfiguration()
-			this.log(`Mode changed from ${this.currentMode} to ${newMode}, re-applying API configuration...`)
-			if (this.options.verbose) {
-				this.log(`API config: ${JSON.stringify(apiConfig)}`)
-			}
-			this.sendToExtension({ type: "updateSettings", updatedSettings: apiConfig })
+			this.log(`[MODE CHANGE] from=${this.currentMode} to=${newMode}, re-applying CLI settings`)
+			const updatedSettings = this.buildApiConfiguration()
+			this.sendToExtension({ type: "updateSettings", updatedSettings })
 		}
+
 		if (newMode) {
 			this.currentMode = newMode
 		}
 
-		const clineMessages = state.clineMessages as Array<Record<string, unknown>> | undefined
+		// Detect when the model in state differs from CLI-specified model.
+		// This catches task resume scenarios where the extension loads stored apiConfiguration
+		// which may differ from CLI-provided settings. We re-apply CLI settings proactively.
+		const apiConfig = state.apiConfiguration as Record<string, unknown> | undefined
+		const stateModelId = this.getStateModelId(apiConfig)
+		const expectedModelId = this.getExpectedModelId()
+
+		if (expectedModelId && stateModelId && stateModelId !== expectedModelId) {
+			this.log(`[MODEL MISMATCH] state has ${stateModelId}, CLI expects ${expectedModelId}, re-applying settings`)
+			const updatedSettings = this.buildApiConfiguration()
+			this.sendToExtension({ type: "updateSettings", updatedSettings })
+		}
+
+		const clineMessages = state.clineMessages
 
 		if (clineMessages && clineMessages.length > 0) {
-			// Track message processing for verbose debug output
-			this.processedMessageCount++
-
-			// Verbose: log state update summary
-			if (this.options.verbose) {
-				this.log(`State update #${this.processedMessageCount}: ${clineMessages.length} messages`)
-			}
-
-			// Process all messages to find new or updated ones
 			for (const message of clineMessages) {
-				if (!message) continue
-
-				const ts = message.ts as number | undefined
-				const isPartial = message.partial as boolean | undefined
-				const text = message.text as string
-				const type = message.type as string
-				const say = message.say as string | undefined
-				const ask = message.ask as string | undefined
-
-				if (!ts) continue
-
-				// Handle "say" type messages
-				if (type === "say" && say) {
-					this.handleSayMessage(ts, say, text, isPartial)
+				if (!message) {
+					continue
 				}
-				// Handle "ask" type messages
-				else if (type === "ask" && ask) {
+
+				const ts = message.ts
+				const isPartial = message.partial
+				const text = message.text
+				const type = message.type
+				const say = message.say
+				const ask = message.ask
+
+				if (!ts) {
+					continue
+				}
+
+				if (type === "say" && say && typeof text === "string") {
+					this.handleSayMessage(ts, say, text, isPartial)
+				} else if (type === "ask" && ask && typeof text === "string") {
 					this.handleAskMessage(ts, ask, text, isPartial)
 				}
 			}
@@ -737,25 +805,27 @@ export class ExtensionHost extends EventEmitter {
 	 * Handle messageUpdated - individual streaming updates for a single message
 	 * This is where real-time streaming happens!
 	 */
-	private handleMessageUpdated(msg: Record<string, unknown>): void {
-		const clineMessage = msg.clineMessage as Record<string, unknown> | undefined
-		if (!clineMessage) return
+	private handleMessageUpdated(msg: ExtensionMessage): void {
+		const clineMessage = msg.clineMessage
 
-		const ts = clineMessage.ts as number | undefined
-		const isPartial = clineMessage.partial as boolean | undefined
-		const text = clineMessage.text as string
-		const type = clineMessage.type as string
-		const say = clineMessage.say as string | undefined
-		const ask = clineMessage.ask as string | undefined
-
-		if (!ts) return
-
-		// Handle "say" type messages
-		if (type === "say" && say) {
-			this.handleSayMessage(ts, say, text, isPartial)
+		if (!clineMessage) {
+			return
 		}
-		// Handle "ask" type messages
-		else if (type === "ask" && ask) {
+
+		const ts = clineMessage.ts
+		const isPartial = clineMessage.partial
+		const text = clineMessage.text
+		const type = clineMessage.type
+		const say = clineMessage.say
+		const ask = clineMessage.ask
+
+		if (!ts) {
+			return
+		}
+
+		if (type === "say" && say && typeof text === "string") {
+			this.handleSayMessage(ts, say, text, isPartial)
+		} else if (type === "ask" && ask && typeof text === "string") {
 			this.handleAskMessage(ts, ask, text, isPartial)
 		}
 	}
@@ -768,6 +838,7 @@ export class ExtensionHost extends EventEmitter {
 		if (this.options.disableOutput) {
 			return
 		}
+
 		process.stdout.write(text)
 	}
 
@@ -823,6 +894,7 @@ export class ExtensionHost extends EventEmitter {
 				} else if (!isPartial && text && !alreadyDisplayedComplete) {
 					// Message complete - ensure all content is output
 					const streamed = this.streamedContent.get(ts)
+
 					if (streamed) {
 						// We were streaming - output any remaining delta and finish
 						if (text.length > streamed.text.length && text.startsWith(streamed.text)) {
@@ -834,6 +906,7 @@ export class ExtensionHost extends EventEmitter {
 						// Not streamed yet - output complete message
 						this.output("\n[assistant]", text)
 					}
+
 					this.displayedMessages.set(ts, { text, partial: false })
 					this.streamedContent.set(ts, { text, headerShown: true })
 				}
@@ -842,13 +915,13 @@ export class ExtensionHost extends EventEmitter {
 			case "thinking":
 			case "reasoning":
 				// Stream reasoning content in real-time.
-				this.log(`Received ${say} message: partial=${isPartial}, textLength=${text?.length ?? 0}`)
 				if (isPartial && text) {
 					this.streamContent(ts, text, "[reasoning]")
 					this.displayedMessages.set(ts, { text, partial: true })
 				} else if (!isPartial && text && !alreadyDisplayedComplete) {
 					// Reasoning complete - finish the stream.
 					const streamed = this.streamedContent.get(ts)
+
 					if (streamed) {
 						if (text.length > streamed.text.length && text.startsWith(streamed.text)) {
 							const delta = text.slice(streamed.text.length)
@@ -858,6 +931,7 @@ export class ExtensionHost extends EventEmitter {
 					} else {
 						this.output("\n[reasoning]", text)
 					}
+
 					this.displayedMessages.set(ts, { text, partial: false })
 				}
 				break
@@ -870,11 +944,13 @@ export class ExtensionHost extends EventEmitter {
 				} else if (!isPartial && text && !alreadyDisplayedComplete) {
 					// Command output complete - finish the stream.
 					const streamed = this.streamedContent.get(ts)
+
 					if (streamed) {
 						if (text.length > streamed.text.length && text.startsWith(streamed.text)) {
 							const delta = text.slice(streamed.text.length)
 							this.writeStream(delta)
 						}
+
 						this.finishStream(ts)
 					} else {
 						this.writeStream("\n[command output] ")
@@ -907,7 +983,6 @@ export class ExtensionHost extends EventEmitter {
 				break
 
 			case "tool":
-				// Tool usage - show when complete
 				if (text && !alreadyDisplayedComplete) {
 					this.output("\n[tool]", text)
 					this.displayedMessages.set(ts, { text, partial: false })
@@ -915,21 +990,10 @@ export class ExtensionHost extends EventEmitter {
 				break
 
 			case "api_req_started":
-				// API request started - log in verbose mode
-				if (this.options.verbose) {
-					this.log(`API request started: ts=${ts}`)
-				}
 				break
 
 			default:
-				// Other say types - show in verbose mode
-				if (this.options.verbose) {
-					this.log(`Unknown say type: ${say}, text length: ${text?.length ?? 0}, partial: ${isPartial}`)
-					if (text && !alreadyDisplayedComplete) {
-						this.output(`\n[${say}]`, text || "")
-						this.displayedMessages.set(ts, { text: text || "", partial: false })
-					}
-				}
+			// NO-OP
 		}
 	}
 
@@ -986,7 +1050,7 @@ export class ExtensionHost extends EventEmitter {
 			case "followup":
 				if (!alreadyDisplayed) {
 					// In non-interactive mode, still prompt the user but with a 10s timeout
-					// that auto-selects the first option if no input is received
+					// that auto-selects the first option if no input is received.
 					this.pendingAsks.add(ts)
 					this.handleFollowupQuestionWithTimeout(ts, text)
 					this.displayedMessages.set(ts, { text, partial: false })
@@ -1000,7 +1064,7 @@ export class ExtensionHost extends EventEmitter {
 				}
 				break
 
-			// Note: command_output is handled separately in handleCommandOutputAsk
+			// Note: command_output is handled separately in handleCommandOutputAsk.
 
 			case "tool":
 				if (!alreadyDisplayed && text) {
@@ -1008,11 +1072,16 @@ export class ExtensionHost extends EventEmitter {
 						const toolInfo = JSON.parse(text)
 						const toolName = toolInfo.tool || "unknown"
 						this.output(`\n[tool] ${toolName}`)
-						// Display all tool parameters (excluding 'tool' which is the name)
+
+						// Display all tool parameters (excluding 'tool' which is the name).
 						for (const [key, value] of Object.entries(toolInfo)) {
-							if (key === "tool") continue
+							if (key === "tool") {
+								continue
+							}
+
 							// Format the value - truncate long strings
 							let displayValue: string
+
 							if (typeof value === "string") {
 								displayValue = value.length > 200 ? value.substring(0, 200) + "..." : value
 							} else if (typeof value === "object" && value !== null) {
@@ -1021,21 +1090,13 @@ export class ExtensionHost extends EventEmitter {
 							} else {
 								displayValue = String(value)
 							}
-							this.output(`  ${key}: ${displayValue}`)
-						}
 
-						// Proactively send API config when switchMode tool is detected
-						// This helps preserve provider/model settings across mode switches
-						if (toolName === "switchMode") {
-							this.log("switchMode tool detected, proactively sending API configuration...")
-							this.sendToExtension({
-								type: "updateSettings",
-								updatedSettings: this.buildApiConfiguration(),
-							})
+							this.output(`  ${key}: ${displayValue}`)
 						}
 					} catch {
 						this.output("\n[tool]", text)
 					}
+
 					this.displayedMessages.set(ts, { text, partial: false })
 				}
 				break
@@ -1394,15 +1455,20 @@ export class ExtensionHost extends EventEmitter {
 			toolInfo = JSON.parse(text) as Record<string, unknown>
 			toolName = (toolInfo.tool as string) || "unknown"
 		} catch {
-			// Use raw text if not JSON
+			// Use raw text if not JSON.
 		}
 
 		this.output(`\n[Tool Request] ${toolName}`)
+
 		// Display all tool parameters (excluding 'tool' which is the name)
 		for (const [key, value] of Object.entries(toolInfo)) {
-			if (key === "tool") continue
+			if (key === "tool") {
+				continue
+			}
+
 			// Format the value - truncate long strings
 			let displayValue: string
+
 			if (typeof value === "string") {
 				displayValue = value.length > 200 ? value.substring(0, 200) + "..." : value
 			} else if (typeof value === "object" && value !== null) {
@@ -1411,6 +1477,7 @@ export class ExtensionHost extends EventEmitter {
 			} else {
 				displayValue = String(value)
 			}
+
 			this.output(`  ${key}: ${displayValue}`)
 		}
 
@@ -1431,7 +1498,10 @@ export class ExtensionHost extends EventEmitter {
 	 */
 	private async handleBrowserApproval(ts: number, text: string): Promise<void> {
 		this.output("\n[browser action request]")
-		if (text) this.output(`  Action: ${text}`)
+
+		if (text) {
+			this.output(`  Action: ${text}`)
+		}
 
 		try {
 			const approved = await this.promptForYesNo("Allow browser action? (y/n): ")
@@ -1440,7 +1510,8 @@ export class ExtensionHost extends EventEmitter {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
 		}
-		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment
+
+		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment.
 	}
 
 	/**
@@ -1454,19 +1525,26 @@ export class ExtensionHost extends EventEmitter {
 		try {
 			const mcpInfo = JSON.parse(text)
 			serverName = mcpInfo.server_name || "unknown"
+
 			if (mcpInfo.type === "use_mcp_tool") {
 				toolName = mcpInfo.tool_name || ""
 			} else if (mcpInfo.type === "access_mcp_resource") {
 				resourceUri = mcpInfo.uri || ""
 			}
 		} catch {
-			// Use raw text if not JSON
+			// Use raw text if not JSON.
 		}
 
 		this.output("\n[mcp request]")
 		this.output(`  Server: ${serverName}`)
-		if (toolName) this.output(`  Tool: ${toolName}`)
-		if (resourceUri) this.output(`  Resource: ${resourceUri}`)
+
+		if (toolName) {
+			this.output(`  Tool: ${toolName}`)
+		}
+
+		if (resourceUri) {
+			this.output(`  Resource: ${resourceUri}`)
+		}
 
 		try {
 			const approved = await this.promptForYesNo("Allow MCP access? (y/n): ")
@@ -1475,7 +1553,8 @@ export class ExtensionHost extends EventEmitter {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
 		}
-		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment
+
+		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment.
 	}
 
 	/**
@@ -1501,7 +1580,10 @@ export class ExtensionHost extends EventEmitter {
 	private async handleResumeTask(ts: number, ask: string, text: string): Promise<void> {
 		const isCompleted = ask === "resume_completed_task"
 		this.output(`\n[Resume ${isCompleted ? "Completed " : ""}Task]`)
-		if (text) this.output(`  ${text}`)
+
+		if (text) {
+			this.output(`  ${text}`)
+		}
 
 		try {
 			const resume = await this.promptForYesNo("Continue with this task? (y/n): ")
@@ -1510,7 +1592,8 @@ export class ExtensionHost extends EventEmitter {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
 		}
-		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment
+
+		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment.
 	}
 
 	/**
@@ -1518,7 +1601,10 @@ export class ExtensionHost extends EventEmitter {
 	 */
 	private async handleGenericApproval(ts: number, ask: string, text: string): Promise<void> {
 		this.output(`\n[${ask}]`)
-		if (text) this.output(`  ${text}`)
+
+		if (text) {
+			this.output(`  ${text}`)
+		}
 
 		try {
 			const approved = await this.promptForYesNo("Approve? (y/n): ")
@@ -1527,7 +1613,8 @@ export class ExtensionHost extends EventEmitter {
 			this.output("[Defaulting to: no]")
 			this.sendApprovalResponse(false)
 		}
-		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment
+
+		// Note: Don't delete from pendingAsks - see handleFollowupQuestion comment.
 	}
 
 	/**
@@ -1546,18 +1633,21 @@ export class ExtensionHost extends EventEmitter {
 			// Message complete - output any remaining content and send approval
 			if (text && !alreadyDisplayedComplete) {
 				const streamed = this.streamedContent.get(ts)
+
 				if (streamed) {
 					// We were streaming - output any remaining delta and finish.
 					if (text.length > streamed.text.length && text.startsWith(streamed.text)) {
 						const delta = text.slice(streamed.text.length)
 						this.writeStream(delta)
 					}
+
 					this.finishStream(ts)
 				} else {
 					this.writeStream("\n[command output] ")
 					this.writeStream(text)
 					this.writeStream("\n")
 				}
+
 				this.displayedMessages.set(ts, { text, partial: false })
 				this.streamedContent.set(ts, { text, headerShown: true })
 			}
@@ -1629,11 +1719,7 @@ export class ExtensionHost extends EventEmitter {
 	 * Send a followup response (text answer) to the extension
 	 */
 	private sendFollowupResponse(text: string): void {
-		this.sendToExtension({
-			type: "askResponse",
-			askResponse: "messageResponse",
-			text,
-		})
+		this.sendToExtension({ type: "askResponse", askResponse: "messageResponse", text })
 	}
 
 	/**
@@ -1644,28 +1730,6 @@ export class ExtensionHost extends EventEmitter {
 			type: "askResponse",
 			askResponse: approved ? "yesButtonClicked" : "noButtonClicked",
 		})
-	}
-
-	/**
-	 * Handle action messages
-	 */
-	private handleActionMessage(msg: Record<string, unknown>): void {
-		const action = msg.action as string
-
-		if (this.options.verbose) {
-			this.log("Action:", action)
-		}
-	}
-
-	/**
-	 * Handle invoke messages
-	 */
-	private handleInvokeMessage(msg: Record<string, unknown>): void {
-		const invoke = msg.invoke as string
-
-		if (this.options.verbose) {
-			this.log("Invoke:", invoke)
-		}
 	}
 
 	/**
@@ -1710,8 +1774,6 @@ export class ExtensionHost extends EventEmitter {
 	 * Clean up resources
 	 */
 	async dispose(): Promise<void> {
-		this.log("Disposing extension host...")
-
 		// Clear pending asks
 		this.pendingAsks.clear()
 
@@ -1731,8 +1793,8 @@ export class ExtensionHost extends EventEmitter {
 		if (this.extensionModule?.deactivate) {
 			try {
 				await this.extensionModule.deactivate()
-			} catch (error) {
-				this.log("Error deactivating extension:", error)
+			} catch (_error) {
+				// NO-OP
 			}
 		}
 
@@ -1748,7 +1810,5 @@ export class ExtensionHost extends EventEmitter {
 
 		// Restore console if it was suppressed
 		this.restoreConsole()
-
-		this.log("Extension host disposed")
 	}
 }

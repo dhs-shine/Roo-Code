@@ -34,6 +34,9 @@ import {
 	type CreateTaskOptions,
 	type TokenUsage,
 	type ToolUsage,
+	type ExtensionMessage,
+	type ExtensionState,
+	type MarketplaceInstalledMetadata,
 	RooCodeEventName,
 	requestyDefaultModelId,
 	openRouterDefaultModelId,
@@ -51,7 +54,6 @@ import { Package } from "../../shared/package"
 import { findLast } from "../../shared/array"
 import { supportPrompt } from "../../shared/support-prompt"
 import { GlobalFileNames } from "../../shared/globalFileNames"
-import type { ExtensionMessage, ExtensionState, MarketplaceInstalledMetadata } from "../../shared/ExtensionMessage"
 import { Mode, defaultModeSlug, getModeBySlug } from "../../shared/modes"
 import { experimentDefault } from "../../shared/experiments"
 import { formatLanguage } from "../../shared/language"

@@ -11,9 +11,9 @@ import { Trans } from "react-i18next"
 import { useDebounceEffect } from "@src/utils/useDebounceEffect"
 import { appendImages } from "@src/utils/imageUtils"
 
-import type { ClineAsk, ClineMessage } from "@roo-code/types"
+import type { ClineAsk, ClineMessage, ExtensionMessage } from "@roo-code/types"
 
-import { ClineSayTool, ExtensionMessage } from "@roo/ExtensionMessage"
+import { ClineSayTool } from "@roo/ExtensionMessage"
 import { findLast } from "@roo/array"
 import { SuggestionItem } from "@roo-code/types"
 import { combineApiRequests } from "@roo/combineApiRequests"

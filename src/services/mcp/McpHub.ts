@@ -1,3 +1,7 @@
+import * as fs from "fs/promises"
+import * as path from "path"
+
+import * as vscode from "vscode"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js"
@@ -13,22 +17,23 @@ import {
 import chokidar, { FSWatcher } from "chokidar"
 import delay from "delay"
 import deepEqual from "fast-deep-equal"
-import * as fs from "fs/promises"
-import * as path from "path"
-import * as vscode from "vscode"
 import { z } from "zod"
-import { t } from "../../i18n"
 
-import { ClineProvider } from "../../core/webview/ClineProvider"
-import { GlobalFileNames } from "../../shared/globalFileNames"
-import {
+import type {
 	McpResource,
 	McpResourceResponse,
 	McpResourceTemplate,
 	McpServer,
 	McpTool,
 	McpToolCallResponse,
-} from "../../shared/mcp"
+} from "@roo-code/types"
+
+import { t } from "../../i18n"
+
+import { ClineProvider } from "../../core/webview/ClineProvider"
+
+import { GlobalFileNames } from "../../shared/globalFileNames"
+
 import { fileExistsAtPath } from "../../utils/fs"
 import { arePathsEqual, getWorkspacePath } from "../../utils/path"
 import { injectVariables } from "../../utils/config"
