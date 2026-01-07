@@ -16,8 +16,8 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(1)
-			expect(result[0].ask).toBe("command")
-			expect(result[0].text).toBe(`ls\n${COMMAND_OUTPUT_STRING}file1.txt\nfile2.txt`)
+			expect(result[0]!.ask).toBe("command")
+			expect(result[0]!.text).toBe(`ls\n${COMMAND_OUTPUT_STRING}file1.txt\nfile2.txt`)
 		})
 
 		it("should handle multiple command sequences", () => {
@@ -31,8 +31,8 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(2)
-			expect(result[0].text).toBe(`ls\n${COMMAND_OUTPUT_STRING}output1`)
-			expect(result[1].text).toBe(`pwd\n${COMMAND_OUTPUT_STRING}output2`)
+			expect(result[0]!.text).toBe(`ls\n${COMMAND_OUTPUT_STRING}output1`)
+			expect(result[1]!.text).toBe(`pwd\n${COMMAND_OUTPUT_STRING}output2`)
 		})
 
 		it("should handle command without output", () => {
@@ -44,9 +44,9 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(2)
-			expect(result[0].ask).toBe("command")
-			expect(result[0].text).toBe("ls")
-			expect(result[1].say).toBe("text")
+			expect(result[0]!.ask).toBe("command")
+			expect(result[0]!.text).toBe("ls")
+			expect(result[1]!.say).toBe("text")
 		})
 
 		it("should handle duplicate outputs (ask and say with same text)", () => {
@@ -59,7 +59,7 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(1)
-			expect(result[0].text).toBe(`ls\n${COMMAND_OUTPUT_STRING}same output`)
+			expect(result[0]!.text).toBe(`ls\n${COMMAND_OUTPUT_STRING}same output`)
 		})
 	})
 
@@ -78,8 +78,8 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(1)
-			expect(result[0].ask).toBe("use_mcp_server")
-			const parsed = JSON.parse(result[0].text || "{}")
+			expect(result[0]!.ask).toBe("use_mcp_server")
+			const parsed = JSON.parse(result[0]!.text || "{}")
 			expect(parsed.server).toBe("test")
 			expect(parsed.response).toBe("response data")
 		})
@@ -97,7 +97,7 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(1)
-			expect(result[0].ask).toBe("use_mcp_server")
+			expect(result[0]!.ask).toBe("use_mcp_server")
 		})
 
 		it("should handle multiple MCP responses", () => {
@@ -115,7 +115,7 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(1)
-			const parsed = JSON.parse(result[0].text || "{}")
+			const parsed = JSON.parse(result[0]!.text || "{}")
 			expect(parsed.response).toBe("response1\nresponse2")
 		})
 	})
@@ -132,9 +132,9 @@ describe("consolidateCommands", () => {
 			const result = consolidateCommands(messages)
 
 			expect(result.length).toBe(3)
-			expect(result[0].text).toBe("before")
-			expect(result[1].text).toBe(`ls\n${COMMAND_OUTPUT_STRING}output`)
-			expect(result[2].text).toBe("after")
+			expect(result[0]!.text).toBe("before")
+			expect(result[1]!.text).toBe(`ls\n${COMMAND_OUTPUT_STRING}output`)
+			expect(result[2]!.text).toBe("after")
 		})
 
 		it("should handle empty array", () => {

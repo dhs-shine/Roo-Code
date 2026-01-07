@@ -38,9 +38,9 @@ describe("consolidateApiRequests", () => {
 		const result = consolidateApiRequests(messages)
 
 		expect(result.length).toBe(1)
-		expect(result[0].say).toBe("api_req_started")
+		expect(result[0]!.say).toBe("api_req_started")
 
-		const parsedText = JSON.parse(result[0].text || "{}")
+		const parsedText = JSON.parse(result[0]!.text || "{}")
 		expect(parsedText.request).toBe("GET /api/data")
 		expect(parsedText.cost).toBe(0.005)
 	})
@@ -75,9 +75,9 @@ describe("consolidateApiRequests", () => {
 		const result = consolidateApiRequests(messages)
 
 		expect(result.length).toBe(3)
-		expect(result[0].text).toBe("Before")
-		expect(result[1].say).toBe("api_req_started")
-		expect(result[2].text).toBe("After")
+		expect(result[0]!.text).toBe("Before")
+		expect(result[1]!.say).toBe("api_req_started")
+		expect(result[2]!.text).toBe("After")
 	})
 
 	it("should handle multiple api_req pairs", () => {
@@ -91,8 +91,8 @@ describe("consolidateApiRequests", () => {
 		const result = consolidateApiRequests(messages)
 
 		expect(result.length).toBe(2)
-		expect(JSON.parse(result[0].text || "{}").request).toBe("first")
-		expect(JSON.parse(result[1].text || "{}").request).toBe("second")
+		expect(JSON.parse(result[0]!.text || "{}").request).toBe("first")
+		expect(JSON.parse(result[1]!.text || "{}").request).toBe("second")
 	})
 
 	it("should handle orphan api_req_started without finish", () => {
@@ -104,8 +104,8 @@ describe("consolidateApiRequests", () => {
 		const result = consolidateApiRequests(messages)
 
 		expect(result.length).toBe(2)
-		expect(result[0].say).toBe("api_req_started")
-		expect(JSON.parse(result[0].text || "{}").request).toBe("orphan")
+		expect(result[0]!.say).toBe("api_req_started")
+		expect(JSON.parse(result[0]!.text || "{}").request).toBe("orphan")
 	})
 
 	it("should handle invalid JSON in message text", () => {
