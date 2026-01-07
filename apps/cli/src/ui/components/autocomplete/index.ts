@@ -57,4 +57,6 @@ export {
 	toModeResult,
 	type ModeResult,
 	type ModeTriggerConfig,
+	createHelpTrigger,
+	type HelpShortcutResult,
 } from "./triggers/index.js"

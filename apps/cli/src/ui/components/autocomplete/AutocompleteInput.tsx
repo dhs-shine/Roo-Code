@@ -136,18 +136,21 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 	 */
 	const handleChange = useCallback(
 		(value: string) => {
-			setInputValue(value)
-
 			// Check for trigger activation
 			const lastLine = getLastLine(value)
-			pickerActions.handleInputChange(value, lastLine)
+			const result = pickerActions.handleInputChange(value, lastLine)
+
+			// If trigger consumes its character, use the consumed value instead
+			const effectiveValue = result.consumedValue ?? value
+
+			setInputValue(effectiveValue)
 
 			// If user types while browsing history, exit browsing mode
 			// This prevents the history effect from overwriting their edits
 			if (isBrowsing) {
-				resetBrowsing(value)
+				resetBrowsing(effectiveValue)
 			} else {
-				setDraft(value)
+				setDraft(effectiveValue)
 			}
 		},
 		[pickerActions, isBrowsing, setDraft, getLastLine, resetBrowsing],

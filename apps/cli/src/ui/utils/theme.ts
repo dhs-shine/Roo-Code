@@ -73,6 +73,7 @@ export const warningColor = hardcore.yellow // Yellow for warnings
 // Focus indicator colors
 export const focusColor = hardcore.cyan // Focus indicator (cyan accent)
 export const scrollActiveColor = hardcore.purple // Scroll area active indicator (purple)
+export const scrollTrackColor = hardcore.surface1 // Muted scrollbar track color
 
 // Base text color
 export const text = hardcore.text // Standard text color

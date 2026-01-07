@@ -25,6 +25,16 @@ describe("FileTrigger", () => {
 			expect(result).toEqual({ query: "fil", triggerIndex: 10 })
 		})
 
+		it("should detect @ even without text after it", () => {
+			const trigger = createFileTrigger({
+				onSearch: () => {},
+				getResults: () => [],
+			})
+
+			const result = trigger.detectTrigger("@")
+			expect(result).toEqual({ query: "", triggerIndex: 0 })
+		})
+
 		it("should not detect @ followed by space", () => {
 			const trigger = createFileTrigger({
 				onSearch: () => {},

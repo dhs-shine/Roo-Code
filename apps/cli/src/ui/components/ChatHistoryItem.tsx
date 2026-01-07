@@ -5,12 +5,21 @@ import * as theme from "../utils/theme.js"
 import type { TUIMessage } from "../types.js"
 import TodoDisplay from "./TodoDisplay.js"
 
+/**
+ * Sanitize content for terminal display by:
+ * - Replacing tab characters with spaces (tabs expand to variable widths in terminals)
+ * - Stripping carriage returns that could cause display issues
+ */
+function sanitizeContent(text: string): string {
+	return text.replace(/\t/g, "    ").replace(/\r/g, "")
+}
+
 interface ChatHistoryItemProps {
 	message: TUIMessage
 }
 
 function ChatHistoryItem({ message }: ChatHistoryItemProps) {
-	const content = message.content || "..."
+	const content = sanitizeContent(message.content || "...")
 
 	switch (message.role) {
 		case "user":
@@ -66,14 +75,8 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 				)
 			}
 
-			let toolContent = message.toolDisplayOutput || content
-
-			// Replace tab characters with spaces to prevent terminal width miscalculation
-			// Tabs expand to variable widths in terminals, causing layout issues
-			toolContent = toolContent.replace(/\t/g, "    ")
-
-			// Also strip any carriage returns that could cause issues
-			toolContent = toolContent.replace(/\r/g, "")
+			// Sanitize toolDisplayOutput if present, otherwise use already-sanitized content
+			const toolContent = message.toolDisplayOutput ? sanitizeContent(message.toolDisplayOutput) : content
 
 			return (
 				<Box flexDirection="column" paddingX={1}>

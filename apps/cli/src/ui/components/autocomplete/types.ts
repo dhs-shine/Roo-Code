@@ -97,6 +97,14 @@ export interface AutocompleteTrigger<T extends AutocompleteItem = AutocompleteIt
 	 * @default 150
 	 */
 	debounceMs?: number
+
+	/**
+	 * Whether the trigger character should be consumed (not shown in input).
+	 * When true, the trigger character is treated as a control character
+	 * that activates the picker but doesn't appear in the text input.
+	 * @default false
+	 */
+	consumeTrigger?: boolean
 }
 
 /**
@@ -118,11 +126,19 @@ export interface AutocompletePickerState<T extends AutocompleteItem = Autocomple
 }
 
 /**
+ * Result from handleInputChange indicating if input should be modified.
+ */
+export interface InputChangeResult {
+	/** If set, the input value should be replaced with this value (trigger char consumed) */
+	consumedValue?: string
+}
+
+/**
  * Actions returned by the useAutocompletePicker hook.
  */
 export interface AutocompletePickerActions<T extends AutocompleteItem> {
 	/** Handle input value changes - detects triggers and initiates search */
-	handleInputChange: (value: string, lineText: string) => void
+	handleInputChange: (value: string, lineText: string) => InputChangeResult
 	/** Handle item selection - returns the new input value */
 	handleSelect: (item: T, fullValue: string, lineText: string) => string
 	/** Close the picker */

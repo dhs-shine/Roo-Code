@@ -58,10 +58,13 @@ describe("FileTrigger", () => {
 			expect(result).toBeNull()
 		})
 
-		it("should return null when query is empty", () => {
+		it("should detect @ trigger even with empty query", () => {
 			const result = trigger.detectTrigger("hello @")
 
-			expect(result).toBeNull()
+			expect(result).toEqual({
+				query: "",
+				triggerIndex: 6,
+			})
 		})
 
 		it("should find last @ in line", () => {

@@ -328,9 +328,10 @@ export function ScrollArea({
 	const showScrollbarVisible = showScrollbar && (scrollbar.maxScroll > 0 || isActive)
 
 	// Scrollbar colors based on focus state
-	// When active: handle is bright purple, track is dim purple
-	// When inactive: handle is dim gray, track is very dim
+	// When active: handle is bright purple, track is muted
+	// When inactive: handle is dim gray, track is more muted
 	const handleColor = isActive ? theme.scrollActiveColor : theme.dimText
+	const trackColor = theme.scrollTrackColor
 
 	// When no height prop is provided, use flexGrow to fill available space
 	const useFlexGrow = heightProp === undefined
@@ -356,21 +357,22 @@ export function ScrollArea({
 				</Box>
 			</Box>
 
-			{/* Scrollbar - rendered as a single Text element to avoid per-character wrapping issues */}
+			{/* Scrollbar - rendered with separate colors for handle and track */}
 			{showScrollbar && (
 				<Box flexDirection="column" width={1} flexShrink={0} overflow="hidden">
-					{showScrollbarVisible && height > 0 && (
-						<Text wrap="truncate" color={handleColor}>
-							{Array(height)
-								.fill(null)
-								.map((_, i) => {
-									const isHandle =
-										i >= scrollbar.handleStart && i < scrollbar.handleStart + scrollbar.handleHeight
-									return isHandle ? "┃" : "│"
-								})
-								.join("\n")}
-						</Text>
-					)}
+					{showScrollbarVisible &&
+						height > 0 &&
+						Array(height)
+							.fill(null)
+							.map((_, i) => {
+								const isHandle =
+									i >= scrollbar.handleStart && i < scrollbar.handleStart + scrollbar.handleHeight
+								return (
+									<Text key={i} color={isHandle ? handleColor : trackColor}>
+										{isHandle ? "┃" : "│"}
+									</Text>
+								)
+							})}
 				</Box>
 			)}
 		</Box>

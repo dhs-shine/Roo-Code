@@ -19,6 +19,7 @@ import {
 	createFileTrigger,
 	createSlashCommandTrigger,
 	createModeTrigger,
+	createHelpTrigger,
 	toFileResult,
 	toSlashCommandResult,
 	toModeResult,
@@ -319,7 +320,7 @@ function AppInner({
 	}, [])
 
 	// Create autocomplete triggers
-	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult)
+	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult, HelpShortcutResult)
 	// IMPORTANT: We use refs here to avoid recreating triggers every time data changes.
 	// This prevents the UI flash caused by: data change -> memo recreation -> re-render with stale state
 	// The getResults/getCommands/getModes callbacks always read from refs to get fresh data.
@@ -347,7 +348,9 @@ function AppInner({
 			getModes: () => availableModesRef.current.map(toModeResult),
 		})
 
-		return [fileTrigger, slashCommandTrigger, modeTrigger]
+		const helpTrigger = createHelpTrigger()
+
+		return [fileTrigger, slashCommandTrigger, modeTrigger, helpTrigger]
 	}, [handleFileSearch]) // Only depend on handleFileSearch - data accessed via refs
 
 	// Handle Ctrl+C, Tab for focus switching, and Escape to cancel task
@@ -1016,6 +1019,8 @@ function AppInner({
 		</Box>
 	) : isScrollAreaActive ? (
 		<ScrollIndicator scrollTop={scrollState.scrollTop} maxScroll={scrollState.maxScroll} isScrollFocused={true} />
+	) : isInputAreaActive ? (
+		<Text color={theme.dimText}>? for shortcuts</Text>
 	) : null
 
 	// Get render function for picker items based on active trigger

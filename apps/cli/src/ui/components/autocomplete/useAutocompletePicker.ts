@@ -57,10 +57,24 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 	}, [])
 
 	/**
-	 * Handle input value changes - detects triggers and initiates search
+	 * Get the input value with the trigger character removed.
+	 * Used when a trigger has consumeTrigger: true.
+	 */
+	const getConsumedValue = useCallback((value: string, lastLine: string, triggerIndex: number): string => {
+		const lines = value.split("\n")
+		const lastLineIndex = lines.length - 1
+		// Remove the trigger character from the last line
+		const newLastLine = lastLine.slice(0, triggerIndex) + lastLine.slice(triggerIndex + 1)
+		lines[lastLineIndex] = newLastLine
+		return lines.join("\n")
+	}, [])
+
+	/**
+	 * Handle input value changes - detects triggers and initiates search.
+	 * Returns an object indicating if the input should be modified (for consumeTrigger).
 	 */
 	const handleInputChange = useCallback(
-		(value: string, lineText?: string) => {
+		(value: string, lineText?: string): { consumedValue?: string } => {
 			const lastLine = lineText ?? getLastLine(value)
 
 			// Check each trigger for activation
@@ -89,7 +103,7 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 						triggerInfo: null,
 					}))
 				}
-				return
+				return {}
 			}
 
 			const { query } = foundTriggerInfo
@@ -106,7 +120,11 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 
 			if (query === lastQuery && state.isOpen && state.activeTrigger?.id === foundTrigger.id) {
 				// Same query, same trigger - no need to search again
-				return
+				// Still return consumed value if trigger consumes input
+				if (foundTrigger.consumeTrigger) {
+					return { consumedValue: getConsumedValue(value, lastLine, foundTriggerInfo.triggerIndex) }
+				}
+				return {}
 			}
 
 			// Determine if this is an async trigger (has refreshResults for external data)
@@ -188,8 +206,15 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 			}, debounceMs)
 
 			debounceTimersRef.current.set(foundTrigger.id, timer)
+
+			// Return consumed value if trigger consumes input
+			if (foundTrigger.consumeTrigger) {
+				return { consumedValue: getConsumedValue(value, lastLine, foundTriggerInfo.triggerIndex) }
+			}
+
+			return {}
 		},
-		[triggers, state.isOpen, state.activeTrigger?.id, getLastLine],
+		[triggers, state.isOpen, state.activeTrigger?.id, getLastLine, getConsumedValue],
 	)
 
 	/**

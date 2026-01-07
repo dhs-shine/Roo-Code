@@ -88,11 +88,8 @@ export function createFileTrigger(config: FileTriggerConfig): AutocompleteTrigge
 				return null
 			}
 
-			// Require at least one character after @
-			if (query.length === 0) {
-				return null
-			}
-
+			// Unlike other triggers that only work at line-start, @ can appear anywhere
+			// and should show results even with an empty query (just "@" typed)
 			return { query, triggerIndex: atIndex }
 		},
 

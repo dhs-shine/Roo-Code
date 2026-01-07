@@ -328,6 +328,162 @@ describe("MultilineTextInput", () => {
 	})
 })
 
+describe("word-boundary line wrapping", () => {
+	// Represents a visual row after wrapping a logical line
+	interface VisualRow {
+		text: string
+		logicalLineIndex: number
+		isFirstRowOfLine: boolean
+		startCol: number
+	}
+
+	/**
+	 * Wrap a logical line into visual rows based on available width.
+	 * Uses word-boundary wrapping: prefers to break at spaces rather than
+	 * in the middle of words.
+	 */
+	function wrapLine(lineText: string, logicalLineIndex: number, availableWidth: number): VisualRow[] {
+		if (availableWidth <= 0 || lineText.length <= availableWidth) {
+			return [
+				{
+					text: lineText,
+					logicalLineIndex,
+					isFirstRowOfLine: true,
+					startCol: 0,
+				},
+			]
+		}
+
+		const rows: VisualRow[] = []
+		let remaining = lineText
+		let startCol = 0
+		let isFirst = true
+
+		while (remaining.length > 0) {
+			if (remaining.length <= availableWidth) {
+				rows.push({
+					text: remaining,
+					logicalLineIndex,
+					isFirstRowOfLine: isFirst,
+					startCol,
+				})
+				break
+			}
+
+			// Find a good break point - prefer breaking at a space
+			let breakPoint = availableWidth
+
+			// Look backwards from availableWidth for a space
+			const searchStart = Math.min(availableWidth, remaining.length)
+			let spaceIndex = -1
+			for (let i = searchStart - 1; i >= 0; i--) {
+				if (remaining[i] === " ") {
+					spaceIndex = i
+					break
+				}
+			}
+
+			if (spaceIndex > 0) {
+				// Found a space - break after it (include the space in this row)
+				breakPoint = spaceIndex + 1
+			}
+			// else: no space found, break at availableWidth (mid-word break as fallback)
+
+			const chunk = remaining.slice(0, breakPoint)
+			rows.push({
+				text: chunk,
+				logicalLineIndex,
+				isFirstRowOfLine: isFirst,
+				startCol,
+			})
+
+			remaining = remaining.slice(breakPoint)
+			startCol += breakPoint
+			isFirst = false
+		}
+
+		return rows
+	}
+
+	it("should not wrap text shorter than available width", () => {
+		const rows = wrapLine("hello world", 0, 20)
+		expect(rows).toHaveLength(1)
+		expect(rows[0]!.text).toBe("hello world")
+		expect(rows[0]!.isFirstRowOfLine).toBe(true)
+		expect(rows[0]!.startCol).toBe(0)
+	})
+
+	it("should wrap at word boundary when possible", () => {
+		const rows = wrapLine("hello world foo", 0, 10)
+		expect(rows).toHaveLength(2)
+		expect(rows[0]!.text).toBe("hello ")
+		expect(rows[0]!.isFirstRowOfLine).toBe(true)
+		expect(rows[0]!.startCol).toBe(0)
+		expect(rows[1]!.text).toBe("world foo")
+		expect(rows[1]!.isFirstRowOfLine).toBe(false)
+		expect(rows[1]!.startCol).toBe(6) // "hello " is 6 chars
+	})
+
+	it("should break mid-word when no space found", () => {
+		const rows = wrapLine("superlongwordwithoutspaces", 0, 10)
+		expect(rows).toHaveLength(3)
+		// Falls back to breaking at availableWidth when no space is found
+		expect(rows[0]!.text).toBe("superlongw")
+		expect(rows[1]!.text).toBe("ordwithout")
+		expect(rows[2]!.text).toBe("spaces")
+	})
+
+	it("should handle multiple word wraps", () => {
+		const rows = wrapLine("one two three four five six", 0, 8)
+		expect(rows).toHaveLength(4)
+		expect(rows[0]!.text).toBe("one two ")
+		expect(rows[1]!.text).toBe("three ")
+		expect(rows[2]!.text).toBe("four ")
+		expect(rows[3]!.text).toBe("five six")
+	})
+
+	it("should preserve logical line index", () => {
+		const rows = wrapLine("hello world", 2, 6)
+		expect(rows.every((r) => r.logicalLineIndex === 2)).toBe(true)
+	})
+
+	it("should handle empty string", () => {
+		const rows = wrapLine("", 0, 10)
+		expect(rows).toHaveLength(1)
+		expect(rows[0]!.text).toBe("")
+	})
+
+	it("should handle string that exactly matches width", () => {
+		const rows = wrapLine("hello", 0, 5)
+		expect(rows).toHaveLength(1)
+		expect(rows[0]!.text).toBe("hello")
+	})
+
+	it("should track correct startCol for wrapped rows", () => {
+		const rows = wrapLine("aa bb cc dd", 0, 5)
+		// "aa bb cc dd" = 11 chars, width = 5
+		// "aa bb cc dd": a(0) a(1) ' '(2) b(3) b(4) ' '(5) c(6) c(7) ' '(8) d(9) d(10)
+		// Search backwards from index 4:
+		//   index 4='b', 3='b', 2=' ' -> space at 2, breakPoint=3
+		// Row 0: "aa " (3 chars), startCol=0
+		// Remaining: "bb cc dd" (8 chars), startCol=3
+		// Search backwards from index 4:
+		//   "bb cc dd": b(0) b(1) ' '(2) c(3) c(4)...
+		//   index 4='c', 3='c', 2=' ' -> space at 2, breakPoint=3
+		// Row 1: "bb " (3 chars), startCol=3
+		// Remaining: "cc dd" (5 chars), startCol=6
+		// 5 <= 5, fits in one row
+		// Row 2: "cc dd", startCol=6
+		expect(rows).toHaveLength(3)
+		expect(rows[0]!.text).toBe("aa ")
+		expect(rows[0]!.startCol).toBe(0)
+		expect(rows[1]!.text).toBe("bb ")
+		expect(rows[1]!.startCol).toBe(3)
+		expect(rows[2]!.text).toBe("cc dd")
+		expect(rows[2]!.startCol).toBe(6)
+	})
+})
+
 describe("multi-line history integration", () => {
 	it("should store multi-line entries with newlines", () => {
 		const entry = "foo\nbar\nbaz"

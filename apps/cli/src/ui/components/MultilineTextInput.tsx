@@ -120,7 +120,9 @@ interface VisualRow {
 }
 
 /**
- * Wrap a logical line into visual rows based on available width
+ * Wrap a logical line into visual rows based on available width.
+ * Uses word-boundary wrapping: prefers to break at spaces rather than
+ * in the middle of words.
  */
 function wrapLine(lineText: string, logicalLineIndex: number, availableWidth: number): VisualRow[] {
 	if (availableWidth <= 0 || lineText.length <= availableWidth) {
@@ -140,21 +142,47 @@ function wrapLine(lineText: string, logicalLineIndex: number, availableWidth: nu
 	let isFirst = true
 
 	while (remaining.length > 0) {
-		const chunk = remaining.slice(0, availableWidth)
+		if (remaining.length <= availableWidth) {
+			// Remaining text fits in one row
+			rows.push({
+				text: remaining,
+				logicalLineIndex,
+				isFirstRowOfLine: isFirst,
+				startCol,
+			})
+			break
+		}
+
+		// Find a good break point - prefer breaking at a space
+		let breakPoint = availableWidth
+
+		// Look backwards from availableWidth for a space
+		const searchStart = Math.min(availableWidth, remaining.length)
+		let spaceIndex = -1
+		for (let i = searchStart - 1; i >= 0; i--) {
+			if (remaining[i] === " ") {
+				spaceIndex = i
+				break
+			}
+		}
+
+		if (spaceIndex > 0) {
+			// Found a space - break after it (include the space in this row)
+			breakPoint = spaceIndex + 1
+		}
+		// else: no space found, break at availableWidth (mid-word break as fallback)
+
+		const chunk = remaining.slice(0, breakPoint)
 		rows.push({
 			text: chunk,
 			logicalLineIndex,
 			isFirstRowOfLine: isFirst,
 			startCol,
 		})
-		remaining = remaining.slice(availableWidth)
-		startCol += availableWidth
-		isFirst = false
-	}
 
-	// If the line ends exactly at the width boundary, add an empty row for cursor
-	if (lineText.length > 0 && lineText.length % availableWidth === 0) {
-		// The last row already exists, no need to add empty row
+		remaining = remaining.slice(breakPoint)
+		startCol += breakPoint
+		isFirst = false
 	}
 
 	return rows
@@ -366,10 +394,11 @@ export function MultilineTextInput({
 		(row: VisualRow, rowIndex: number) => {
 			const isPlaceholder = !value && !isActive && row.logicalLineIndex === 0
 			const isFirstLine = row.logicalLineIndex === 0
-			// Only show prefix on the first visual row of each logical line
+			// Only show prefix on the first visual row of each logical line:
+			// - First line gets the prompt (e.g., "> ")
+			// - User-created continuation lines (via Ctrl+Enter) get continuationIndent
+			// - Wrapped rows (same logical line) get no prefix to avoid copy artifacts
 			const linePrefix = row.isFirstRowOfLine ? (isFirstLine ? prompt : continuationIndent) : ""
-			// Pad continuation rows to align with the text
-			const padding = !row.isFirstRowOfLine ? (isFirstLine ? prompt : continuationIndent) : ""
 
 			// Check if cursor is on this visual row
 			let hasCursor = false
@@ -400,7 +429,7 @@ export function MultilineTextInput({
 
 				return (
 					<Box key={rowIndex}>
-						<Text dimColor={!isFirstLine || !row.isFirstRowOfLine}>{linePrefix || padding}</Text>
+						<Text dimColor={!isFirstLine}>{linePrefix}</Text>
 						<Text>{beforeCursor}</Text>
 						<Text inverse>{cursorChar}</Text>
 						<Text>{afterCursor}</Text>
@@ -410,7 +439,7 @@ export function MultilineTextInput({
 
 			return (
 				<Box key={rowIndex}>
-					<Text dimColor={!isFirstLine || !row.isFirstRowOfLine}>{linePrefix || padding}</Text>
+					<Text dimColor={!isFirstLine}>{linePrefix}</Text>
 					<Text dimColor={isPlaceholder}>{row.text}</Text>
 				</Box>
 			)

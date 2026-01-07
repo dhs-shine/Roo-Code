@@ -12,3 +12,5 @@ export {
 } from "./SlashCommandTrigger.js"
 
 export { createModeTrigger, toModeResult, type ModeResult, type ModeTriggerConfig } from "./ModeTrigger.js"
+
+export { createHelpTrigger, type HelpShortcutResult } from "./HelpTrigger.js"

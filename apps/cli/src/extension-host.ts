@@ -576,6 +576,7 @@ export class ExtensionHost extends EventEmitter {
 				alwaysAllowFollowupQuestions: true,
 				allowedCommands: ["*"],
 				commandExecutionTimeout: 20,
+				enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
 			}
 
 			this.applyRuntimeSettings(settings)
@@ -584,6 +585,7 @@ export class ExtensionHost extends EventEmitter {
 		} else {
 			const settings: RooCodeSettings = {
 				autoApprovalEnabled: false,
+				enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
 			}
 
 			this.applyRuntimeSettings(settings)
