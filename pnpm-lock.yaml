@@ -85,6 +85,9 @@ importers:
       '@inkjs/ui':
         specifier: ^2.0.0
         version: 2.0.0(ink@6.6.0(@types/react@18.3.23)(react@19.2.3))
+      '@roo-code/core':
+        specifier: workspace:^
+        version: link:../../packages/core
       '@roo-code/types':
         specifier: workspace:^
         version: link:../../packages/types

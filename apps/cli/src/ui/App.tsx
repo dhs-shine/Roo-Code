@@ -4,7 +4,12 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { EventEmitter } from "events"
 import { randomUUID } from "crypto"
 
+// Import only message-utils to avoid custom-tools dependencies (execa/child_process)
+import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
+import type { ClineMessage } from "@roo-code/types"
+
 import { useCLIStore } from "./store.js"
+import { getContextWindow } from "../utils/getContextWindow.js"
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
@@ -166,7 +171,19 @@ function AppInner({
 		allSlashCommands,
 		setFileSearchResults,
 		setAllSlashCommands,
+		tokenUsage,
+		routerModels,
+		apiConfiguration,
+		setTokenUsage,
+		setRouterModels,
+		setApiConfiguration,
 	} = useCLIStore()
+
+	// Compute context window from router models and API configuration
+	const contextWindow = useMemo(
+		() => getContextWindow(routerModels, apiConfiguration),
+		[routerModels, apiConfiguration],
+	)
 
 	const hostRef = useRef<ExtensionHostInterface | null>(null)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -527,6 +544,16 @@ function AppInner({
 							handleAskMessage(ts, ask, text, partial)
 						}
 					}
+
+					// Compute token usage metrics from clineMessages
+					// Skip first message (task prompt) as per webview UI pattern
+					if (clineMessages.length > 1) {
+						const processed = consolidateApiRequests(
+							consolidateCommands(clineMessages.slice(1) as ClineMessage[]),
+						)
+						const metrics = consolidateTokenUsage(processed)
+						setTokenUsage(metrics)
+					}
 				}
 			} else if (msg.type === "messageUpdated") {
 				const clineMessage = msg.clineMessage as Record<string, unknown>
@@ -562,9 +589,29 @@ function AppInner({
 					source: cmd.source,
 				}))
 				setAllSlashCommands(slashCommands)
+			} else if (msg.type === "routerModels") {
+				// Handle router models for context window lookup
+				const models = msg.models as Record<string, Record<string, { contextWindow?: number }>> | undefined
+				if (models) {
+					setRouterModels(models)
+				}
+			} else if (msg.type === "apiConfiguration") {
+				// Handle API configuration for model identification
+				const config = msg.configuration as unknown
+				if (config) {
+					setApiConfiguration(config as import("@roo-code/types").ProviderSettings)
+				}
 			}
 		},
-		[handleSayMessage, handleAskMessage, setFileSearchResults, setAllSlashCommands],
+		[
+			handleSayMessage,
+			handleAskMessage,
+			setFileSearchResults,
+			setAllSlashCommands,
+			setTokenUsage,
+			setRouterModels,
+			setApiConfiguration,
+		],
 	)
 
 	// Initialize extension host
@@ -827,6 +874,8 @@ function AppInner({
 					cwd={workspacePath}
 					reasoningEffort={reasoningEffort}
 					version={version}
+					tokenUsage={tokenUsage}
+					contextWindow={contextWindow}
 				/>
 			</Box>
 

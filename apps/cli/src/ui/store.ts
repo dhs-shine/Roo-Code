@@ -1,6 +1,14 @@
 import { create } from "zustand"
 
+import type { TokenUsage, ProviderSettings } from "@roo-code/types"
+
 import type { TUIMessage, PendingAsk, FileSearchResult, SlashCommandResult } from "./types.js"
+
+/**
+ * RouterModels type for context window lookup.
+ * Simplified version - we only need contextWindow from ModelInfo.
+ */
+export type RouterModels = Record<string, Record<string, { contextWindow?: number }>>
 
 /**
  * CLI application state.
@@ -23,6 +31,13 @@ interface CLIState {
 	// Autocomplete data (from API/extension)
 	fileSearchResults: FileSearchResult[]
 	allSlashCommands: SlashCommandResult[]
+
+	// Token usage metrics (from getApiMetrics)
+	tokenUsage: TokenUsage | null
+
+	// Model info for context window lookup
+	routerModels: RouterModels | null
+	apiConfiguration: ProviderSettings | null
 }
 
 interface CLIActions {
@@ -41,6 +56,11 @@ interface CLIActions {
 	// Autocomplete data actions
 	setFileSearchResults: (results: FileSearchResult[]) => void
 	setAllSlashCommands: (commands: SlashCommandResult[]) => void
+
+	// Metrics actions
+	setTokenUsage: (usage: TokenUsage | null) => void
+	setRouterModels: (models: RouterModels | null) => void
+	setApiConfiguration: (config: ProviderSettings | null) => void
 }
 
 const initialState: CLIState = {
@@ -52,6 +72,9 @@ const initialState: CLIState = {
 	error: null,
 	fileSearchResults: [],
 	allSlashCommands: [],
+	tokenUsage: null,
+	routerModels: null,
+	apiConfiguration: null,
 }
 
 export const useCLIStore = create<CLIState & CLIActions>((set) => ({
@@ -106,4 +129,7 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	reset: () => set(initialState),
 	setFileSearchResults: (results) => set({ fileSearchResults: results }),
 	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
+	setTokenUsage: (usage) => set({ tokenUsage: usage }),
+	setRouterModels: (models) => set({ routerModels: models }),
+	setApiConfiguration: (config) => set({ apiConfiguration: config }),
 }))
