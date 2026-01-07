@@ -3,8 +3,6 @@ import * as path from "path"
 import fs from "fs/promises"
 import EventEmitter from "events"
 
-import { debugLog, DebugLogger } from "../../utils/debug-log"
-
 import { Anthropic } from "@anthropic-ai/sdk"
 import delay from "delay"
 import axios from "axios"
@@ -916,21 +914,9 @@ export class ClineProvider
 						if (hasActualSettings) {
 							await this.activateProviderProfile({ name: profile.name })
 						} else {
-							debugLog(
-								"[createTaskWithHistoryItem] SKIPPING profile activation - profile has no apiProvider",
-								{
-									savedConfigId,
-									profileName: profile.name,
-								},
-							)
+							// The task will continue with the current/default configuration.
 						}
 					} catch (error) {
-						// Log the error but continue with task restoration.
-						this.log(
-							`Failed to restore API configuration for mode '${historyItem.mode}': ${
-								error instanceof Error ? error.message : String(error)
-							}. Continuing with default configuration.`,
-						)
 						// The task will continue with the current/default configuration.
 					}
 				}
@@ -1260,15 +1246,6 @@ export class ClineProvider
 	 * @param newMode The mode to switch to
 	 */
 	public async handleModeSwitch(newMode: Mode) {
-		// DEBUG: Log entry point with current state
-		const currentApiConfigName = this.getGlobalState("currentApiConfigName")
-		const currentMode = this.getGlobalState("mode")
-		debugLog("[handleModeSwitch] START", {
-			newMode,
-			currentMode,
-			currentApiConfigName,
-		})
-
 		const task = this.getCurrentTask()
 
 		if (task) {
@@ -1307,26 +1284,12 @@ export class ClineProvider
 		const savedConfigId = await this.providerSettingsManager.getModeConfigId(newMode)
 		const listApiConfig = await this.providerSettingsManager.listConfig()
 
-		// DEBUG: Log mode config lookup results
-		debugLog("[handleModeSwitch] getModeConfigId result", {
-			newMode,
-			savedConfigId,
-			listApiConfigCount: listApiConfig.length,
-			listApiConfigNames: listApiConfig.map((c) => ({ name: c.name, id: c.id, provider: c.apiProvider })),
-		})
-
 		// Update listApiConfigMeta first to ensure UI has latest data.
 		await this.updateGlobalState("listApiConfigMeta", listApiConfig)
 
 		// If this mode has a saved config, use it.
 		if (savedConfigId) {
 			const profile = listApiConfig.find(({ id }) => id === savedConfigId)
-
-			// DEBUG: Log profile activation attempt
-			debugLog("[handleModeSwitch] activating saved config", {
-				savedConfigId,
-				foundProfile: profile ? { name: profile.name, id: profile.id, provider: profile.apiProvider } : null,
-			})
 
 			if (profile?.name) {
 				// Check if the profile has actual API configuration (not just an id).
@@ -1341,60 +1304,23 @@ export class ClineProvider
 				if (hasActualSettings) {
 					await this.activateProviderProfile({ name: profile.name })
 				} else {
-					debugLog(
-						"[handleModeSwitch] SKIPPING profile activation - profile has no apiProvider (CLI mode workaround)",
-						{
-							savedConfigId,
-							profileName: profile.name,
-							profileKeys: Object.keys(fullProfile).filter(
-								(k) => fullProfile[k as keyof typeof fullProfile] !== undefined,
-							),
-						},
-					)
+					// The task will continue with the current/default configuration.
 				}
 			} else {
-				debugLog("[handleModeSwitch] WARNING: savedConfigId exists but profile not found in listApiConfig", {
-					savedConfigId,
-					availableIds: listApiConfig.map((c) => c.id),
-				})
+				// The task will continue with the current/default configuration.
 			}
 		} else {
 			// If no saved config for this mode, save current config as default.
 			const currentApiConfigNameAfter = this.getGlobalState("currentApiConfigName")
 
-			// DEBUG: Log no saved config case
-			debugLog("[handleModeSwitch] no saved config for mode, using current", {
-				newMode,
-				currentApiConfigNameAfter,
-			})
-
 			if (currentApiConfigNameAfter) {
 				const config = listApiConfig.find((c) => c.name === currentApiConfigNameAfter)
 
 				if (config?.id) {
-					debugLog("[handleModeSwitch] saving current config as mode default", {
-						newMode,
-						configId: config.id,
-						configName: config.name,
-					})
 					await this.providerSettingsManager.setModeConfig(newMode, config.id)
 				}
 			}
 		}
-
-		// DEBUG: Log final state after mode switch
-		const finalState = await this.getState()
-		debugLog("[handleModeSwitch] END - final state", {
-			newMode,
-			finalApiProvider: finalState.apiConfiguration?.apiProvider,
-			finalApiConfigName: finalState.currentApiConfigName,
-			// Check various provider API keys to see if any are set
-			hasAnyApiKey: !!(
-				(finalState.apiConfiguration as any)?.apiKey ||
-				(finalState.apiConfiguration as any)?.openRouterApiKey ||
-				(finalState.apiConfiguration as any)?.requestyApiKey
-			),
-		})
 
 		await this.postStateToWebview()
 	}
@@ -1535,26 +1461,7 @@ export class ClineProvider
 	}
 
 	async activateProviderProfile(args: { name: string } | { id: string }) {
-		// DEBUG: Log entry point
-		debugLog("[activateProviderProfile] START", { args })
-
 		const { name, id, ...providerSettings } = await this.providerSettingsManager.activateProfile(args)
-
-		// DEBUG: Log what was returned from activateProfile
-		debugLog("[activateProviderProfile] activateProfile result", {
-			name,
-			id,
-			apiProvider: providerSettings.apiProvider,
-			hasApiKey: !!(
-				(providerSettings as any)?.apiKey ||
-				(providerSettings as any)?.openRouterApiKey ||
-				(providerSettings as any)?.requestyApiKey
-			),
-			// Log all keys that have values (but not the values themselves for security)
-			settingsKeys: Object.keys(providerSettings).filter(
-				(k) => providerSettings[k as keyof typeof providerSettings] !== undefined,
-			),
-		})
 
 		// See `upsertProviderProfile` for a description of what this is doing.
 		await Promise.all([
@@ -1565,28 +1472,14 @@ export class ClineProvider
 
 		const { mode } = await this.getState()
 
-		// DEBUG: Log mode config update
-		debugLog("[activateProviderProfile] setting mode config", { mode, id })
-
 		if (id) {
 			await this.providerSettingsManager.setModeConfig(mode, id)
 		}
+
 		// Change the provider for the current task.
 		this.updateTaskApiHandlerIfNeeded(providerSettings, { forceRebuild: true })
 
 		await this.postStateToWebview()
-
-		// DEBUG: Log final state
-		const finalState = this.contextProxy.getProviderSettings()
-		debugLog("[activateProviderProfile] END - final provider settings", {
-			name,
-			apiProvider: finalState.apiProvider,
-			hasApiKey: !!(
-				(finalState as any)?.apiKey ||
-				(finalState as any)?.openRouterApiKey ||
-				(finalState as any)?.requestyApiKey
-			),
-		})
 
 		if (providerSettings.apiProvider) {
 			this.emit(RooCodeEventName.ProviderProfileChanged, { name, provider: providerSettings.apiProvider })

@@ -2,8 +2,6 @@ import { ExtensionContext } from "vscode"
 import { z, ZodError } from "zod"
 import deepEqual from "fast-deep-equal"
 
-import { debugLog } from "../../utils/debug-log"
-
 import {
 	type ProviderSettingsWithId,
 	providerSettingsWithIdSchema,
@@ -379,21 +377,12 @@ export class ProviderSettingsManager {
 			return await this.lock(async () => {
 				const providerProfiles = await this.load()
 
-				const configs = Object.entries(providerProfiles.apiConfigs).map(([name, apiConfig]) => ({
+				return Object.entries(providerProfiles.apiConfigs).map(([name, apiConfig]) => ({
 					name,
 					id: apiConfig.id || "",
 					apiProvider: apiConfig.apiProvider,
 					modelId: this.cleanModelId(getModelId(apiConfig)),
 				}))
-
-				// DEBUG: Log listed configs
-				debugLog("[ProviderSettingsManager.listConfig]", {
-					configCount: configs.length,
-					configs: configs.map((c) => ({ name: c.name, id: c.id, provider: c.apiProvider })),
-					modeApiConfigs: providerProfiles.modeApiConfigs,
-				})
-
-				return configs
 			})
 		} catch (error) {
 			throw new Error(`Failed to list configs: ${error}`)
@@ -469,40 +458,16 @@ export class ProviderSettingsManager {
 	public async activateProfile(
 		params: { name: string } | { id: string },
 	): Promise<ProviderSettingsWithId & { name: string }> {
-		// DEBUG: Log entry point
-		debugLog("[ProviderSettingsManager.activateProfile] START", { params })
-
 		const { name, ...providerSettings } = await this.getProfile(params)
-
-		// DEBUG: Log what was retrieved from getProfile
-		debugLog("[ProviderSettingsManager.activateProfile] getProfile result", {
-			name,
-			id: providerSettings.id,
-			apiProvider: providerSettings.apiProvider,
-			hasSettings: Object.keys(providerSettings).length > 0,
-			settingsKeys: Object.keys(providerSettings).filter(
-				(k) => providerSettings[k as keyof typeof providerSettings] !== undefined,
-			),
-		})
 
 		try {
 			return await this.lock(async () => {
 				const providerProfiles = await this.load()
 				providerProfiles.currentApiConfigName = name
 				await this.store(providerProfiles)
-
-				debugLog("[ProviderSettingsManager.activateProfile] END - profile activated", {
-					name,
-					id: providerSettings.id,
-				})
-
 				return { name, ...providerSettings }
 			})
 		} catch (error) {
-			debugLog("[ProviderSettingsManager.activateProfile] ERROR", {
-				params,
-				error: error instanceof Error ? error.message : String(error),
-			})
 			throw new Error(`Failed to activate profile: ${error instanceof Error ? error.message : error}`)
 		}
 	}
@@ -571,27 +536,10 @@ export class ProviderSettingsManager {
 	public async getModeConfigId(mode: Mode) {
 		try {
 			return await this.lock(async () => {
-				const providerProfiles = await this.load()
-				const configId = providerProfiles.modeApiConfigs?.[mode]
-
-				// DEBUG: Log mode config lookup
-				debugLog("[ProviderSettingsManager.getModeConfigId]", {
-					mode,
-					configId,
-					allModeApiConfigs: providerProfiles.modeApiConfigs,
-					availableConfigIds: Object.entries(providerProfiles.apiConfigs).map(([name, c]) => ({
-						name,
-						id: c.id,
-					})),
-				})
-
-				return configId
+				const { modeApiConfigs } = await this.load()
+				return modeApiConfigs?.[mode]
 			})
 		} catch (error) {
-			debugLog("[ProviderSettingsManager.getModeConfigId] ERROR", {
-				mode,
-				error: error instanceof Error ? error.message : String(error),
-			})
 			throw new Error(`Failed to get mode config: ${error}`)
 		}
 	}
@@ -662,15 +610,7 @@ export class ProviderSettingsManager {
 		try {
 			const content = await this.context.secrets.get(this.secretsKey)
 
-			// DEBUG: Log raw secrets content
-			debugLog("[ProviderSettingsManager.load] secrets.get result", {
-				secretsKey: this.secretsKey,
-				hasContent: !!content,
-				contentLength: content?.length ?? 0,
-			})
-
 			if (!content) {
-				debugLog("[ProviderSettingsManager.load] returning default profiles (no content found)")
 				return this.defaultProviderProfiles
 			}
 
@@ -691,31 +631,12 @@ export class ProviderSettingsManager {
 				{} as Record<string, ProviderSettingsWithId>,
 			)
 
-			const result = {
+			return {
 				...providerProfiles,
 				apiConfigs: Object.fromEntries(
 					Object.entries(apiConfigs).filter(([_, apiConfig]) => apiConfig !== null),
 				),
 			}
-
-			// DEBUG: Log loaded profiles summary
-			debugLog("[ProviderSettingsManager.load] loaded profiles", {
-				currentApiConfigName: result.currentApiConfigName,
-				apiConfigNames: Object.keys(result.apiConfigs),
-				modeApiConfigs: result.modeApiConfigs,
-				configDetails: Object.entries(result.apiConfigs).map(([name, config]) => ({
-					name,
-					id: config.id,
-					apiProvider: config.apiProvider,
-					hasApiKey: !!(
-						(config as any)?.apiKey ||
-						(config as any)?.openRouterApiKey ||
-						(config as any)?.requestyApiKey
-					),
-				})),
-			})
-
-			return result
 		} catch (error) {
 			if (error instanceof ZodError) {
 				TelemetryService.instance.captureSchemaValidationError({
@@ -723,10 +644,6 @@ export class ProviderSettingsManager {
 					error,
 				})
 			}
-
-			debugLog("[ProviderSettingsManager.load] ERROR", {
-				error: error instanceof Error ? error.message : String(error),
-			})
 
 			throw new Error(`Failed to read provider profiles from secrets: ${error}`)
 		}
