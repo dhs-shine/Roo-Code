@@ -201,6 +201,22 @@ function AppInner({
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const followupAutocompleteRef = useRef<AutocompleteInputHandle<any>>(null)
 
+	// Stable refs for autocomplete data - prevents useMemo from recreating triggers on every data change
+	const fileSearchResultsRef = useRef(fileSearchResults)
+	const allSlashCommandsRef = useRef(allSlashCommands)
+	const availableModesRef = useRef(availableModes)
+
+	// Keep refs in sync with current state
+	useEffect(() => {
+		fileSearchResultsRef.current = fileSearchResults
+	}, [fileSearchResults])
+	useEffect(() => {
+		allSlashCommandsRef.current = allSlashCommands
+	}, [allSlashCommands])
+	useEffect(() => {
+		availableModesRef.current = availableModes
+	}, [availableModes])
+
 	// Track seen message timestamps to filter duplicates and the prompt echo
 	const seenMessageIds = useRef<Set<string>>(new Set())
 	const firstTextMessageSkipped = useRef(false)
@@ -303,25 +319,31 @@ function AppInner({
 
 	// Create autocomplete triggers
 	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult)
+	// IMPORTANT: We use refs here to avoid recreating triggers every time data changes.
+	// This prevents the UI flash caused by: data change -> memo recreation -> re-render with stale state
+	// The getResults/getCommands/getModes callbacks always read from refs to get fresh data.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const autocompleteTriggers = useMemo((): AutocompleteTrigger<any>[] => {
 		const fileTrigger = createFileTrigger({
 			onSearch: handleFileSearch,
-			getResults: () => fileSearchResults.map(toFileResult),
+			getResults: () => {
+				const results = fileSearchResultsRef.current
+				return results.map(toFileResult)
+			},
 		})
 
 		const slashCommandTrigger = createSlashCommandTrigger({
-			getCommands: () => allSlashCommands.map(toSlashCommandResult),
+			getCommands: () => allSlashCommandsRef.current.map(toSlashCommandResult),
 		})
 
 		const modeTrigger = createModeTrigger({
-			getModes: () => availableModes.map(toModeResult),
+			getModes: () => availableModesRef.current.map(toModeResult),
 		})
 
 		return [fileTrigger, slashCommandTrigger, modeTrigger]
-	}, [handleFileSearch, fileSearchResults, allSlashCommands, availableModes])
+	}, [handleFileSearch]) // Only depend on handleFileSearch - data accessed via refs
 
-	// Handle Ctrl+C and Tab for focus switching
+	// Handle Ctrl+C, Tab for focus switching, and Escape to cancel task
 	useInput((input, key) => {
 		// Tab to toggle focus between scroll area and input (only when input is available)
 		if (key.tab && canToggleFocus && !pickerState.isOpen) {
@@ -330,6 +352,17 @@ function AppInner({
 				if (prev === "input") return "scroll"
 				return isScrollAreaActive ? "input" : "scroll"
 			})
+			return
+		}
+
+		// Escape key to cancel/pause task when loading (streaming)
+		if (key.escape && isLoading && hostRef.current) {
+			// If picker is open, let the picker handle escape first
+			if (pickerState.isOpen) {
+				return
+			}
+			// Send cancel message to extension (same as webview-ui Cancel button)
+			hostRef.current.sendToExtension({ type: "cancelTask" })
 			return
 		}
 
@@ -373,15 +406,34 @@ function AppInner({
 		}
 	}, [])
 
-	// FIX: Refresh search results when fileSearchResults changes while file picker is open
-	// This fixes the async timing issue where getResults() returns empty before API responds
-	// Only refresh when we actually have results (not on initial empty state)
+	// Refresh search results when fileSearchResults changes while file picker is open
+	// This handles the async timing where API results arrive after initial search
+	// IMPORTANT: Only run when fileSearchResults array identity changes (new API response)
+	// We use a ref to track this and avoid depending on pickerState in the effect
+	const prevFileSearchResultsRef = useRef(fileSearchResults)
+	const pickerStateRef = useRef(pickerState)
+	pickerStateRef.current = pickerState
+
 	useEffect(() => {
-		if (pickerState.isOpen && pickerState.activeTrigger?.id === "file" && fileSearchResults.length > 0) {
+		// Only run if fileSearchResults actually changed (different array reference)
+		if (fileSearchResults === prevFileSearchResultsRef.current) {
+			return
+		}
+		prevFileSearchResultsRef.current = fileSearchResults
+
+		// Read pickerState from ref to avoid dependency
+		const currentPickerState = pickerStateRef.current
+
+		// Only refresh when file picker is open and we have new results
+		if (
+			currentPickerState.isOpen &&
+			currentPickerState.activeTrigger?.id === "file" &&
+			fileSearchResults.length > 0
+		) {
 			autocompleteRef.current?.refreshSearch()
 			followupAutocompleteRef.current?.refreshSearch()
 		}
-	}, [fileSearchResults, pickerState.isOpen, pickerState.activeTrigger?.id])
+	}, [fileSearchResults]) // Only depend on fileSearchResults - read pickerState from ref
 
 	// Map extension say messages to TUI messages
 	const handleSayMessage = useCallback(
@@ -491,6 +543,15 @@ function AppInner({
 
 			if (ask === "command_output") {
 				seenMessageIds.current.add(messageId)
+				return
+			}
+
+			// Handle resume_task and resume_completed_task - stop loading and show text input
+			// Do not set pendingAsk - just stop loading so user sees normal input to type new message
+			if (ask === "resume_task" || ask === "resume_completed_task") {
+				seenMessageIds.current.add(messageId)
+				setLoading(false)
+				// Do not set pendingAsk - let the normal text input appear
 				return
 			}
 
@@ -757,7 +818,9 @@ function AppInner({
 	// Handle user input submission
 	const handleSubmit = useCallback(
 		async (text: string) => {
-			if (!hostRef.current || !text.trim()) return
+			if (!hostRef.current || !text.trim()) {
+				return
+			}
 
 			const trimmedText = text.trim()
 
@@ -929,6 +992,8 @@ function AppInner({
 	) : isLoading ? (
 		<Box>
 			<LoadingText>{view === "ToolUse" ? "Using tool" : "Thinking"}</LoadingText>
+			<Text color={theme.dimText}> • </Text>
+			<Text color={theme.dimText}>Esc to cancel</Text>
 			{isScrollAreaActive && (
 				<>
 					<Text color={theme.dimText}> • </Text>
@@ -1044,6 +1109,7 @@ function AppInner({
 											renderItem={getPickerRenderItem()}
 											emptyMessage={pickerState.activeTrigger?.emptyMessage}
 											isActive={isInputAreaActive && pickerState.isOpen}
+											isLoading={pickerState.isLoading}
 										/>
 									</Box>
 								) : (
@@ -1086,6 +1152,7 @@ function AppInner({
 									renderItem={getPickerRenderItem()}
 									emptyMessage={pickerState.activeTrigger?.emptyMessage}
 									isActive={isInputAreaActive && pickerState.isOpen}
+									isLoading={pickerState.isLoading}
 								/>
 							</Box>
 						) : (

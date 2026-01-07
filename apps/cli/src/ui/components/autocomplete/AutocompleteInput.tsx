@@ -1,5 +1,5 @@
 import { useInput } from "ink"
-import { useState, useCallback, useEffect, useImperativeHandle, forwardRef, type Ref } from "react"
+import { useState, useCallback, useEffect, useImperativeHandle, forwardRef, useRef, type Ref } from "react"
 
 import { MultilineTextInput } from "../MultilineTextInput.js"
 import { useInputHistory } from "../../hooks/useInputHistory.js"
@@ -77,9 +77,35 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 
 	const [wasBrowsing, setWasBrowsing] = useState(false)
 
-	// Notify parent of picker state changes
+	// Track previous picker state values to avoid unnecessary parent updates
+	const prevPickerStateRef = useRef({
+		isOpen: pickerState.isOpen,
+		resultsLength: pickerState.results.length,
+		selectedIndex: pickerState.selectedIndex,
+		isLoading: pickerState.isLoading,
+	})
+
+	// Notify parent of picker state changes only when relevant properties change
+	// This prevents double renders from cascading state updates
 	useEffect(() => {
-		onPickerStateChange?.(pickerState)
+		const prev = prevPickerStateRef.current
+		const curr = {
+			isOpen: pickerState.isOpen,
+			resultsLength: pickerState.results.length,
+			selectedIndex: pickerState.selectedIndex,
+			isLoading: pickerState.isLoading,
+		}
+
+		// Only notify if something visually relevant changed
+		if (
+			prev.isOpen !== curr.isOpen ||
+			prev.resultsLength !== curr.resultsLength ||
+			prev.selectedIndex !== curr.selectedIndex ||
+			prev.isLoading !== curr.isLoading
+		) {
+			prevPickerStateRef.current = curr
+			onPickerStateChange?.(pickerState)
+		}
 	}, [pickerState, onPickerStateChange])
 
 	// Handle history navigation

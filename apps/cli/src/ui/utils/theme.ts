@@ -1,84 +1,78 @@
 /**
  * Theme configuration for Roo Code CLI TUI
- * Using Catppuccin Mocha color scheme
+ * Using Hardcore color scheme
  */
 
-// Catppuccin Mocha palette
-const catppuccin = {
+// Hardcore palette
+const hardcore = {
 	// Accent colors
-	rosewater: "#f5e0dc",
-	flamingo: "#f2cdcd",
-	pink: "#f5c2e7",
-	mauve: "#cba6f7",
-	red: "#f38ba8",
-	maroon: "#eba0ac",
-	peach: "#fab387",
-	yellow: "#f9e2af",
-	green: "#a6e3a1",
-	teal: "#94e2d5",
-	sky: "#89dceb",
-	sapphire: "#74c7ec",
-	blue: "#89b4fa",
-	lavender: "#b4befe",
+	pink: "#F92672",
+	pinkLight: "#FF669D",
+	green: "#A6E22E",
+	greenLight: "#BEED5F",
+	orange: "#FD971F",
+	yellow: "#E6DB74",
+	cyan: "#66D9EF",
+	purple: "#9E6FFE",
 
 	// Text colors
-	text: "#cdd6f4",
-	subtext1: "#bac2de",
-	subtext0: "#a6adc8",
+	text: "#F8F8F2",
+	subtext1: "#CCCCC6",
+	subtext0: "#A3BABF",
 
 	// Overlay colors
-	overlay2: "#9399b2",
-	overlay1: "#7f849c",
-	overlay0: "#6c7086",
+	overlay2: "#A3BABF",
+	overlay1: "#5E7175",
+	overlay0: "#505354",
 
 	// Surface colors
-	surface2: "#585b70",
-	surface1: "#45475a",
-	surface0: "#313244",
+	surface2: "#505354",
+	surface1: "#383a3e",
+	surface0: "#2d2e2e",
 
 	// Base colors
-	base: "#1e1e2e",
-	mantle: "#181825",
-	crust: "#11111b",
+	base: "#1B1D1E",
+	mantle: "#161819",
+	crust: "#101112",
 }
 
 // Title and branding colors
-export const titleColor = catppuccin.peach // Peach for title
-export const welcomeText = catppuccin.text // Standard text
-export const asciiColor = catppuccin.blue // Blue for ASCII art
+export const titleColor = hardcore.orange // Orange for title
+export const welcomeText = hardcore.text // Standard text
+export const asciiColor = hardcore.cyan // Cyan for ASCII art
 
 // Tips section colors
-export const tipsHeader = catppuccin.peach // Peach for tips headers
-export const tipsText = catppuccin.subtext0 // Subtle text for tips
+export const tipsHeader = hardcore.orange // Orange for tips headers
+export const tipsText = hardcore.subtext0 // Subtle text for tips
 
 // Header text colors (for messages)
-export const userHeader = catppuccin.lavender // Lavender for user header
-export const rooHeader = catppuccin.yellow // Yellow for roo
-export const toolHeader = catppuccin.teal // Teal for tool headers
-export const thinkingHeader = catppuccin.overlay1 // Subtle gray for thinking header
+export const userHeader = hardcore.purple // Purple for user header
+export const rooHeader = hardcore.yellow // Yellow for roo
+export const toolHeader = hardcore.cyan // Cyan for tool headers
+export const thinkingHeader = hardcore.overlay1 // Subtle gray for thinking header
 
 // Message text colors
-export const userText = catppuccin.text // Standard text for user
-export const rooText = catppuccin.text // Standard text for roo
-export const toolText = catppuccin.subtext0 // Subtle text for tool output
-export const thinkingText = catppuccin.overlay2 // Subtle gray for thinking text
+export const userText = hardcore.text // Standard text for user
+export const rooText = hardcore.text // Standard text for roo
+export const toolText = hardcore.subtext0 // Subtle text for tool output
+export const thinkingText = hardcore.overlay2 // Subtle gray for thinking text
 
 // UI element colors
-export const borderColor = catppuccin.surface1 // Surface color for borders
-export const borderColorActive = catppuccin.blue // Active/focused border color
-export const dimText = catppuccin.overlay1 // Dim text
-export const promptColor = catppuccin.overlay2 // Prompt indicator
-export const promptColorActive = catppuccin.blue // Active prompt color
-export const placeholderColor = catppuccin.overlay0 // Placeholder text
+export const borderColor = hardcore.surface1 // Surface color for borders
+export const borderColorActive = hardcore.purple // Active/focused border color
+export const dimText = hardcore.overlay1 // Dim text
+export const promptColor = hardcore.overlay2 // Prompt indicator
+export const promptColorActive = hardcore.cyan // Active prompt color
+export const placeholderColor = hardcore.overlay0 // Placeholder text
 
 // Status colors
-export const successColor = catppuccin.green // Green for success
-export const errorColor = catppuccin.red // Red for errors
-export const warningColor = catppuccin.yellow // Yellow for warnings
+export const successColor = hardcore.green // Green for success
+export const errorColor = hardcore.pink // Pink for errors
+export const warningColor = hardcore.yellow // Yellow for warnings
 
 // Focus indicator colors
-export const focusColor = catppuccin.blue // Focus indicator (blue accent)
-export const scrollActiveColor = catppuccin.mauve // Scroll area active indicator (purple)
+export const focusColor = hardcore.cyan // Focus indicator (cyan accent)
+export const scrollActiveColor = hardcore.purple // Scroll area active indicator (purple)
 
 // Base text color
-export const text = catppuccin.text // Standard text color
+export const text = hardcore.text // Standard text color

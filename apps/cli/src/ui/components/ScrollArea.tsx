@@ -193,6 +193,8 @@ export function ScrollArea({
 
 	const innerRef = useRef<DOMElement>(null)
 	const lastMeasuredHeight = useRef<number>(0)
+	// Track previous scrollToLineTrigger to detect actual changes (allows scrolling to index 0)
+	const prevScrollToLineTriggerRef = useRef<number | undefined>(undefined)
 
 	// Update height when prop changes
 	useEffect(() => {
@@ -232,10 +234,19 @@ export function ScrollArea({
 	}, [scrollToBottomTrigger])
 
 	// Scroll to specific line when trigger changes
+	// FIX: Use ref to detect actual changes instead of `> 0` check, which broke scrolling to index 0
 	useEffect(() => {
-		if (scrollToLineTrigger !== undefined && scrollToLineTrigger > 0 && scrollToLine !== undefined) {
+		const prevTrigger = prevScrollToLineTriggerRef.current
+		const triggerChanged = scrollToLineTrigger !== prevTrigger
+
+		// Only dispatch if trigger actually changed and we have valid values
+		// This allows scrolling to index 0 (which was broken by the old `> 0` check)
+		if (triggerChanged && scrollToLineTrigger !== undefined && scrollToLine !== undefined) {
 			dispatch({ type: "SCROLL_TO_LINE", line: scrollToLine })
 		}
+
+		// Update the ref to track the current trigger value
+		prevScrollToLineTriggerRef.current = scrollToLineTrigger
 	}, [scrollToLineTrigger, scrollToLine])
 
 	// Measure inner content height - use MutationObserver pattern for dynamic content
@@ -355,7 +366,7 @@ export function ScrollArea({
 								.map((_, i) => {
 									const isHandle =
 										i >= scrollbar.handleStart && i < scrollbar.handleStart + scrollbar.handleHeight
-									return isHandle ? "█" : "░"
+									return isHandle ? "┃" : "│"
 								})
 								.join("\n")}
 						</Text>

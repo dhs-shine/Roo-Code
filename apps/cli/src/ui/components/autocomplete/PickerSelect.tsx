@@ -1,7 +1,6 @@
-import { useEffect, useReducer, type ReactNode } from "react"
+import { useRef, useMemo, type ReactNode } from "react"
 import { Box, Text, useInput } from "ink"
 
-import { ScrollArea } from "../ScrollArea.js"
 import type { AutocompleteItem } from "./types.js"
 
 export interface PickerSelectProps<T extends AutocompleteItem> {
@@ -23,11 +22,64 @@ export interface PickerSelectProps<T extends AutocompleteItem> {
 	emptyMessage?: string
 	/** Whether the picker accepts keyboard input */
 	isActive?: boolean
+	/** Whether search is in progress */
+	isLoading?: boolean
+}
+
+/**
+ * Compute visible window based on selected index.
+ * The window "follows" the selection, keeping it visible.
+ * Uses a ref to track the previous window position for smooth scrolling.
+ */
+function computeVisibleWindow(
+	selectedIndex: number,
+	totalItems: number,
+	maxVisible: number,
+	prevWindow: { from: number; to: number },
+): { from: number; to: number } {
+	if (totalItems === 0) {
+		return { from: 0, to: 0 }
+	}
+
+	const visibleCount = Math.min(maxVisible, totalItems)
+
+	// If previous window was empty (fresh results), compute initial window
+	// This handles the case when results first appear
+	if (prevWindow.to === 0 || prevWindow.to <= prevWindow.from) {
+		const newFrom = Math.max(0, selectedIndex)
+		const newTo = Math.min(totalItems, newFrom + visibleCount)
+		return { from: newFrom, to: newTo }
+	}
+
+	// If selected index is within current window, keep the window
+	if (selectedIndex >= prevWindow.from && selectedIndex < prevWindow.to) {
+		// But clamp the window to valid bounds (in case totalItems changed)
+		const clampedFrom = Math.max(0, Math.min(prevWindow.from, totalItems - visibleCount))
+		const clampedTo = Math.min(totalItems, clampedFrom + visibleCount)
+		return { from: clampedFrom, to: clampedTo }
+	}
+
+	// If selected is below window, scroll down to show it at bottom
+	if (selectedIndex >= prevWindow.to) {
+		const newTo = Math.min(totalItems, selectedIndex + 1)
+		const newFrom = Math.max(0, newTo - visibleCount)
+		return { from: newFrom, to: newTo }
+	}
+
+	// If selected is above window, scroll up to show it at top
+	if (selectedIndex < prevWindow.from) {
+		const newFrom = Math.max(0, selectedIndex)
+		const newTo = Math.min(totalItems, newFrom + visibleCount)
+		return { from: newFrom, to: newTo }
+	}
+
+	return prevWindow
 }
 
 /**
  * Generic picker dropdown component for autocomplete.
- * Handles keyboard navigation and item selection.
+ * Uses windowing approach (like @inkjs/ui) - only renders visible items.
+ * This eliminates flickering caused by ScrollArea's margin-based scrolling.
  *
  * @template T - The type of items to display
  */
@@ -41,15 +93,21 @@ export function PickerSelect<T extends AutocompleteItem>({
 	renderItem,
 	emptyMessage = "No results found",
 	isActive = true,
+	isLoading = false,
 }: PickerSelectProps<T>) {
-	// Trigger for scrolling to the selected line
-	const [scrollTrigger, incrementScrollTrigger] = useReducer((x: number) => x + 1, 0)
+	// Track previous window position for smooth scrolling
+	const prevWindowRef = useRef({ from: 0, to: Math.min(maxVisible, results.length) })
 
-	// Scroll to selected item when selection changes
-	useEffect(() => {
-		incrementScrollTrigger()
-	}, [selectedIndex])
+	// Compute visible window SYNCHRONOUSLY during render (no state, no useEffect)
+	// This ensures the correct items are rendered in a single pass
+	const visibleWindow = useMemo(() => {
+		const window = computeVisibleWindow(selectedIndex, results.length, maxVisible, prevWindowRef.current)
+		// Update ref for next render
+		prevWindowRef.current = window
+		return window
+	}, [selectedIndex, results.length, maxVisible])
 
+	// Handle keyboard input
 	useInput(
 		(_input, key) => {
 			if (!isActive) {
@@ -63,11 +121,9 @@ export function PickerSelect<T extends AutocompleteItem>({
 
 			if (key.return) {
 				const selected = results[selectedIndex]
-
 				if (selected) {
 					onSelect(selected)
 				}
-
 				return
 			}
 
@@ -86,29 +142,48 @@ export function PickerSelect<T extends AutocompleteItem>({
 		{ isActive },
 	)
 
+	// Compute visible items (the key optimization - only render what's visible)
+	const visibleItems = useMemo(() => {
+		return results.slice(visibleWindow.from, visibleWindow.to)
+	}, [results, visibleWindow.from, visibleWindow.to])
+
+	// Empty state - maintain consistent height
 	if (results.length === 0) {
+		const message = isLoading ? "Searching..." : emptyMessage
 		return (
-			<Box paddingLeft={2}>
-				<Text dimColor>{emptyMessage}</Text>
+			<Box paddingLeft={2} height={maxVisible}>
+				<Text dimColor>{message}</Text>
 			</Box>
 		)
 	}
 
-	// Height for the scroll area - use maxVisible as the viewport height
-	const scrollHeight = Math.min(results.length, maxVisible)
+	// Calculate if we need scroll indicators
+	const hasMoreAbove = visibleWindow.from > 0
+	const hasMoreBelow = visibleWindow.to < results.length
 
+	// Render only visible items (windowing approach)
 	return (
-		<ScrollArea
-			height={scrollHeight}
-			isActive={false}
-			showScrollbar={true}
-			scrollToLine={selectedIndex}
-			scrollToLineTrigger={scrollTrigger}
-			autoScroll={false}>
-			{results.map((result, index) => {
-				const isSelected = index === selectedIndex
+		<Box flexDirection="column" height={maxVisible}>
+			{/* Scroll indicator - more items above */}
+			{hasMoreAbove && (
+				<Box paddingLeft={2}>
+					<Text dimColor>↑ {visibleWindow.from} more</Text>
+				</Box>
+			)}
+
+			{/* Visible items */}
+			{visibleItems.map((result, visibleIndex) => {
+				const actualIndex = visibleWindow.from + visibleIndex
+				const isSelected = actualIndex === selectedIndex
 				return <Box key={result.key}>{renderItem(result, isSelected)}</Box>
 			})}
-		</ScrollArea>
+
+			{/* Scroll indicator - more items below */}
+			{hasMoreBelow && (
+				<Box paddingLeft={2}>
+					<Text dimColor>↓ {results.length - visibleWindow.to} more</Text>
+				</Box>
+			)}
+		</Box>
 	)
 }

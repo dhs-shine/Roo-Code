@@ -10,14 +10,14 @@ interface ChatHistoryItemProps {
 }
 
 function ChatHistoryItem({ message }: ChatHistoryItemProps) {
-	const content = message.content || "<no content>"
+	const content = message.content || "..."
 
 	switch (message.role) {
 		case "user":
 			return (
 				<Box flexDirection="column" paddingX={1}>
-					<Text bold color={theme.userHeader}>
-						user
+					<Text bold color="magenta">
+						You said:
 					</Text>
 					<Text color={theme.userText}>
 						{content}
@@ -28,8 +28,8 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 		case "assistant":
 			return (
 				<Box flexDirection="column" paddingX={1}>
-					<Text bold color={theme.rooHeader}>
-						roo
+					<Text bold color="yellow">
+						Roo said:
 					</Text>
 					<Text color={theme.rooText}>
 						{content}
@@ -41,7 +41,7 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 			return (
 				<Box flexDirection="column" paddingX={1}>
 					<Text bold color={theme.thinkingHeader} dimColor>
-						thinking
+						Roo is thinking:
 					</Text>
 					<Text color={theme.thinkingText} dimColor>
 						{content}

@@ -13,6 +13,14 @@ const DEFAULT_DEBOUNCE_MS = 150
 /**
  * Hook that manages autocomplete picker state and logic.
  *
+ * This hook supports two types of triggers:
+ * 1. **Sync triggers** (e.g., slash commands, modes): `search()` returns results directly
+ * 2. **Async triggers** (e.g., file search): `search()` triggers an API call and returns `[]`,
+ *    then `forceRefresh()` is called when external data arrives
+ *
+ * For async triggers (those with `refreshResults` defined), the hook preserves existing
+ * results during the loading state to prevent UI flickering.
+ *
  * @template T - The type of autocomplete items
  * @param triggers - Array of autocomplete triggers to check
  * @returns Picker state and actions
@@ -95,19 +103,48 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 
 			// Check if query has changed
 			const lastQuery = lastQueriesRef.current.get(foundTrigger.id)
+
 			if (query === lastQuery && state.isOpen && state.activeTrigger?.id === foundTrigger.id) {
 				// Same query, same trigger - no need to search again
 				return
 			}
 
+			// Determine if this is an async trigger (has refreshResults for external data)
+			const isAsyncTrigger = !!foundTrigger.refreshResults
+
+			// For async triggers, immediately get cached results filtered by new query
+			// This prevents the "empty state flash" when reopening picker with different query
+			let initialResults: T[] = []
+
+			if (isAsyncTrigger && foundTrigger.refreshResults) {
+				try {
+					const cached = foundTrigger.refreshResults(query)
+					if (!(cached instanceof Promise)) {
+						initialResults = cached
+					}
+				} catch {
+					// Ignore errors, will use empty array
+				}
+			}
+
 			// Set loading state immediately and open picker
-			setState((prev) => ({
-				...prev,
-				activeTrigger: foundTrigger,
-				isLoading: true,
-				isOpen: true, // Open immediately when trigger is detected
-				triggerInfo: foundTriggerInfo,
-			}))
+			// For async triggers with cached results, show them immediately to prevent flickering
+			// Only set isLoading if we have no cached results to show
+			const hasResults = initialResults.length > 0
+
+			setState((prev) => {
+				return {
+					...prev,
+					activeTrigger: foundTrigger,
+					// Only show loading state if we have no results to display
+					isLoading: !hasResults,
+					isOpen: true,
+					triggerInfo: foundTriggerInfo,
+					// Use initial cached results if available, otherwise preserve previous
+					results: initialResults.length > 0 ? initialResults : prev.results,
+					selectedIndex: initialResults.length > 0 ? 0 : prev.selectedIndex,
+				}
+			})
 
 			// Debounce the search
 			const timer = setTimeout(async () => {
@@ -122,11 +159,20 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 							return prev
 						}
 
+						// For async triggers (those with refreshResults like file search):
+						// - NEVER update results from search() - it always returns []
+						// - Keep existing results and stay in loading state
+						// - Results will be updated via forceRefresh() when async data arrives
+						if (isAsyncTrigger && results.length === 0) {
+							// Don't change results or loading state - forceRefresh will handle it
+							return prev
+						}
+
 						return {
 							...prev,
 							results,
 							selectedIndex: 0,
-							isOpen: true, // Keep open - user can close with Escape
+							isOpen: true,
 							isLoading: false,
 						}
 					})
@@ -279,10 +325,20 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 						if (prev.activeTrigger?.id !== activeTrigger.id) {
 							return prev
 						}
+
+						// Only update if results actually changed to avoid unnecessary re-renders
+						if (
+							prev.results.length === asyncResults.length &&
+							prev.results.every((r, i) => r.key === asyncResults[i]?.key)
+						) {
+							return { ...prev, isLoading: false }
+						}
+
 						return {
 							...prev,
 							results: asyncResults,
-							selectedIndex: 0,
+							// Preserve selectedIndex if within bounds, otherwise reset to 0
+							selectedIndex: prev.selectedIndex < asyncResults.length ? prev.selectedIndex : 0,
 							isLoading: false,
 						}
 					})
@@ -293,16 +349,26 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 					if (prev.activeTrigger?.id !== activeTrigger.id) {
 						return prev
 					}
+
+					// Only update if results actually changed to avoid unnecessary re-renders
+					if (
+						prev.results.length === results.length &&
+						prev.results.every((r, i) => r.key === results[i]?.key)
+					) {
+						return { ...prev, isLoading: false }
+					}
+
 					return {
 						...prev,
 						results,
-						selectedIndex: 0,
+						// Preserve selectedIndex if within bounds, otherwise reset to 0
+						selectedIndex: prev.selectedIndex < results.length ? prev.selectedIndex : 0,
 						isLoading: false,
 					}
 				})
 			}
 		} catch (_error) {
-			// Silently fail on refresh errors
+			// Silently fail on refresh errors.
 		}
 	}, [state, triggers])
 

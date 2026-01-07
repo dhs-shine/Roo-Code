@@ -44,7 +44,7 @@ function Header({ model, cwd, mode, reasoningEffort, version, tokenUsage, contex
 			<Box width={columns}>
 				<Box flexDirection="row">
 					<Box marginY={1}>
-						<Text color={theme.asciiColor}>{ASCII_ROO}</Text>
+						<Text color="magenta">{ASCII_ROO}</Text>
 					</Box>
 					<Box flexDirection="column" marginLeft={1} marginTop={1}>
 						<Text color={theme.dimText}>Workspace: {displayCwd}</Text>
