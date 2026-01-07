@@ -16,6 +16,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { Box, Text, useInput, type Key } from "ink"
 
+import { isGlobalInputSequence } from "../utils/globalInputSequences.js"
+
 export interface MultilineTextInputProps {
 	/**
 	 * Current value (can contain newlines)
@@ -240,8 +242,9 @@ export function MultilineTextInput({
 				return
 			}
 
-			// Ctrl+C: ignore (handled elsewhere)
-			if (key.ctrl && input === "c") {
+			// Ignore inputs that are handled at the App level (global shortcuts)
+			// This includes Ctrl+C (exit), Ctrl+M (mode toggle), etc.
+			if (isGlobalInputSequence(input, key)) {
 				return
 			}
 

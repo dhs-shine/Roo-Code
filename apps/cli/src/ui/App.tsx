@@ -13,6 +13,8 @@ import { getContextWindow } from "../utils/getContextWindow.js"
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
+import ToastDisplay from "./components/ToastDisplay.js"
+import { useToast } from "./hooks/useToast.js"
 import {
 	AutocompleteInput,
 	PickerSelect,
@@ -34,6 +36,7 @@ import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
 import ScrollIndicator from "./components/ScrollIndicator.js"
 import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
 import * as theme from "./utils/theme.js"
+import { matchesGlobalSequence } from "./utils/globalInputSequences.js"
 import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
 import type {
 	AppProps,
@@ -259,6 +262,9 @@ function AppInner({
 	const [scrollState, setScrollState] = useState({ scrollTop: 0, maxScroll: 0, isAtBottom: true })
 	const { scrollToBottomTrigger, scrollToBottom } = useScrollToBottom()
 
+	// Toast notifications for ephemeral messages (e.g., mode changes)
+	const { currentToast, showInfo } = useToast()
+
 	// Determine current view
 	const view = getView(messages, pendingAsk, isLoading)
 
@@ -357,7 +363,7 @@ function AppInner({
 		return [fileTrigger, slashCommandTrigger, modeTrigger, helpTrigger]
 	}, [handleFileSearch]) // Only depend on handleFileSearch - data accessed via refs
 
-	// Handle Ctrl+C, Tab for focus switching, and Escape to cancel task
+	// Handle Ctrl+C, Tab for focus switching, Escape to cancel task, and Ctrl+M for mode cycling
 	useInput((input, key) => {
 		// Tab to toggle focus between scroll area and input (only when input is available)
 		if (key.tab && canToggleFocus && !pickerState.isOpen) {
@@ -366,6 +372,35 @@ function AppInner({
 				if (prev === "input") return "scroll"
 				return isScrollAreaActive ? "input" : "scroll"
 			})
+			return
+		}
+
+		// Ctrl+M to cycle through modes (only when not loading and we have available modes)
+		// Uses centralized global input sequence detection
+		if (matchesGlobalSequence(input, key, "ctrl-m")) {
+			// Don't allow mode switching while a task is in progress (loading)
+			if (isLoading) {
+				showInfo("Cannot switch modes while task is in progress", 2000)
+				return
+			}
+
+			// Need at least 2 modes to cycle
+			if (availableModes.length < 2) {
+				return
+			}
+
+			// Find current mode index
+			const currentModeSlug = currentMode || mode
+			const currentIndex = availableModes.findIndex((m) => m.slug === currentModeSlug)
+			const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availableModes.length
+			const nextMode = availableModes[nextIndex]
+
+			if (nextMode && hostRef.current) {
+				// Send mode change to extension
+				hostRef.current.sendToExtension({ type: "switchMode", mode: nextMode.slug })
+				// Show toast notification with the mode name
+				showInfo(`Switched to ${nextMode.name}`, 2000)
+			}
 			return
 		}
 
@@ -911,6 +946,9 @@ function AppInner({
 						seenMessageIds.current.clear()
 						firstTextMessageSkipped.current = false
 						hostRef.current.sendToExtension({ type: "clearTask" })
+						// Re-request commands and modes since reset() cleared them.
+						hostRef.current.sendToExtension({ type: "requestCommands" })
+						hostRef.current.sendToExtension({ type: "requestModes" })
 						return
 					}
 				}
@@ -1081,8 +1119,11 @@ function AppInner({
 	}
 
 	// Status bar content
+	// Priority: Toast > Exit hint > Loading > Scroll indicator > Input hint
 	// Don't show spinner when waiting for user input (pendingAsk is set)
-	const statusBarMessage = showExitHint ? (
+	const statusBarMessage = currentToast ? (
+		<ToastDisplay toast={currentToast} />
+	) : showExitHint ? (
 		<Text color="yellow">Press Ctrl+C again to exit</Text>
 	) : isLoading && !pendingAsk ? (
 		<Box>
@@ -1103,7 +1144,7 @@ function AppInner({
 	) : isScrollAreaActive ? (
 		<ScrollIndicator scrollTop={scrollState.scrollTop} maxScroll={scrollState.maxScroll} isScrollFocused={true} />
 	) : isInputAreaActive ? (
-		<Text color={theme.dimText}>? for shortcuts</Text>
+		<Text color={theme.dimText}>? for shortcuts • Ctrl+M mode</Text>
 	) : null
 
 	// Get render function for picker items based on active trigger

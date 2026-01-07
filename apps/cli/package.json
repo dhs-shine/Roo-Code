@@ -1,6 +1,6 @@
 {
 	"name": "@roo-code/cli",
-	"version": "0.2.2",
+	"version": "0.0.42",
 	"description": "Roo Code CLI - Run the Roo Code agent from the command line",
 	"private": true,
 	"type": "module",
@@ -16,6 +16,7 @@
 		"build": "tsup",
 		"dev": "tsup --watch",
 		"start": "node dist/index.js",
+		"release": "scripts/release.sh",
 		"clean": "rimraf dist .turbo"
 	},
 	"dependencies": {

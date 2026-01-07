@@ -60,7 +60,7 @@ detect_platform() {
 
 # Check prerequisites
 check_prerequisites() {
-    step "1/7" "Checking prerequisites..."
+    step "1/8" "Checking prerequisites..."
     
     if ! command -v gh &> /dev/null; then
         error "GitHub CLI (gh) is not installed. Install it with: brew install gh"
@@ -98,13 +98,71 @@ get_version() {
     info "Version: $VERSION (tag: $TAG)"
 }
 
+# Extract changelog content for a specific version
+# Returns the content between the version header and the next version header (or EOF)
+get_changelog_content() {
+    CHANGELOG_FILE="$CLI_DIR/CHANGELOG.md"
+    
+    if [ ! -f "$CHANGELOG_FILE" ]; then
+        warn "No CHANGELOG.md found at $CHANGELOG_FILE"
+        CHANGELOG_CONTENT=""
+        return
+    fi
+    
+    # Try to find the version section (handles both "[0.0.43]" and "[0.0.43] - date" formats)
+    # Also handles "Unreleased" marker
+    VERSION_PATTERN="^\#\# \[${VERSION}\]"
+    
+    # Check if the version exists in the changelog
+    if ! grep -qE "$VERSION_PATTERN" "$CHANGELOG_FILE"; then
+        warn "No changelog entry found for version $VERSION"
+        warn "Please add an entry to $CHANGELOG_FILE before releasing"
+        echo ""
+        echo "Expected format:"
+        echo "  ## [$VERSION] - $(date +%Y-%m-%d)"
+        echo "  "
+        echo "  ### Added"
+        echo "  - Your changes here"
+        echo ""
+        read -p "Continue without changelog content? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            error "Aborted. Please add a changelog entry and try again."
+        fi
+        CHANGELOG_CONTENT=""
+        return
+    fi
+    
+    # Extract content between this version and the next version header (or EOF)
+    # Uses awk to capture everything between ## [VERSION] and the next ## [
+    # Using index() with "[VERSION]" ensures exact matching (1.0.1 won't match 1.0.10)
+    CHANGELOG_CONTENT=$(awk -v version="$VERSION" '
+        BEGIN { found = 0; content = ""; target = "[" version "]" }
+        /^## \[/ {
+            if (found) { exit }
+            if (index($0, target) > 0) { found = 1; next }
+        }
+        found { content = content $0 "\n" }
+        END { print content }
+    ' "$CHANGELOG_FILE")
+    
+    # Trim leading/trailing whitespace
+    CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    
+    if [ -n "$CHANGELOG_CONTENT" ]; then
+        info "Found changelog content for version $VERSION"
+    else
+        warn "Changelog entry for $VERSION appears to be empty"
+    fi
+}
+
 # Build everything
 build() {
-    step "2/7" "Building extension bundle..."
+    step "2/8" "Building extension bundle..."
     cd "$REPO_ROOT"
     pnpm bundle
     
-    step "3/7" "Building CLI..."
+    step "3/8" "Building CLI..."
     pnpm --filter @roo-code/cli build
     
     info "Build complete"
@@ -112,7 +170,7 @@ build() {
 
 # Create release tarball
 create_tarball() {
-    step "4/7" "Creating release tarball for $PLATFORM..."
+    step "4/8" "Creating release tarball for $PLATFORM..."
     
     RELEASE_DIR="$REPO_ROOT/roo-cli-${PLATFORM}"
     TARBALL="roo-cli-${PLATFORM}.tar.gz"
@@ -141,6 +199,7 @@ create_tarball() {
         dependencies: {
           '@inkjs/ui': pkg.dependencies['@inkjs/ui'],
           'commander': pkg.dependencies.commander,
+          'fuzzysort': pkg.dependencies.fuzzysort,
           'ink': pkg.dependencies.ink,
           'react': pkg.dependencies.react,
           'zustand': pkg.dependencies.zustand
@@ -218,9 +277,91 @@ WRAPPER_EOF
     info "Created: $TARBALL ($TARBALL_SIZE)"
 }
 
+# Verify local installation
+verify_local_install() {
+    step "5/8" "Verifying local installation..."
+    
+    VERIFY_DIR="$REPO_ROOT/.verify-release"
+    VERIFY_INSTALL_DIR="$VERIFY_DIR/cli"
+    VERIFY_BIN_DIR="$VERIFY_DIR/bin"
+    
+    # Clean up any previous verification directory
+    rm -rf "$VERIFY_DIR"
+    mkdir -p "$VERIFY_DIR"
+    
+    # Run the actual install script with the local tarball
+    info "Running install script with local tarball..."
+    TARBALL_PATH="$REPO_ROOT/$TARBALL"
+    
+    ROO_LOCAL_TARBALL="$TARBALL_PATH" \
+    ROO_INSTALL_DIR="$VERIFY_INSTALL_DIR" \
+    ROO_BIN_DIR="$VERIFY_BIN_DIR" \
+    ROO_VERSION="$VERSION" \
+    "$CLI_DIR/install.sh" || {
+        echo ""
+        warn "Install script failed. Showing tarball contents:"
+        tar -tzf "$TARBALL_PATH" 2>&1 || true
+        echo ""
+        rm -rf "$VERIFY_DIR"
+        error "Installation verification failed! The install script could not complete successfully."
+    }
+    
+    # Verify the CLI runs correctly with basic commands
+    info "Testing installed CLI..."
+    
+    # Test --help
+    if ! "$VERIFY_BIN_DIR/roo" --help > /dev/null 2>&1; then
+        echo ""
+        warn "CLI --help output:"
+        "$VERIFY_BIN_DIR/roo" --help 2>&1 || true
+        echo ""
+        rm -rf "$VERIFY_DIR"
+        error "CLI --help check failed! The release tarball may have missing dependencies."
+    fi
+    info "CLI --help check passed"
+    
+    # Test --version
+    if ! "$VERIFY_BIN_DIR/roo" --version > /dev/null 2>&1; then
+        echo ""
+        warn "CLI --version output:"
+        "$VERIFY_BIN_DIR/roo" --version 2>&1 || true
+        echo ""
+        rm -rf "$VERIFY_DIR"
+        error "CLI --version check failed! The release tarball may have missing dependencies."
+    fi
+    info "CLI --version check passed"
+    
+    # Run a simple end-to-end test to verify the CLI actually works
+    info "Running end-to-end verification test..."
+    
+    # Create a temporary workspace for the test
+    VERIFY_WORKSPACE="$VERIFY_DIR/workspace"
+    mkdir -p "$VERIFY_WORKSPACE"
+    
+    # Run the CLI with a simple prompt
+    # Use timeout to prevent hanging if something goes wrong
+    if timeout 60 "$VERIFY_BIN_DIR/roo" --yes --exit-on-complete --prompt "1+1=?" "$VERIFY_WORKSPACE" > "$VERIFY_DIR/test-output.log" 2>&1; then
+        info "End-to-end test passed"
+    else
+        EXIT_CODE=$?
+        echo ""
+        warn "End-to-end test failed (exit code: $EXIT_CODE). Output:"
+        cat "$VERIFY_DIR/test-output.log" 2>&1 || true
+        echo ""
+        rm -rf "$VERIFY_DIR"
+        error "CLI end-to-end test failed! The CLI may be broken."
+    fi
+    
+    # Clean up verification directory
+    cd "$REPO_ROOT"
+    rm -rf "$VERIFY_DIR"
+    
+    info "Local verification passed!"
+}
+
 # Create checksum
 create_checksum() {
-    step "5/7" "Creating checksum..."
+    step "6/8" "Creating checksum..."
     cd "$REPO_ROOT"
     
     if command -v sha256sum &> /dev/null; then
@@ -237,7 +378,7 @@ create_checksum() {
 
 # Check if release already exists
 check_existing_release() {
-    step "6/7" "Checking for existing release..."
+    step "7/8" "Checking for existing release..."
     
     if gh release view "$TAG" &> /dev/null; then
         warn "Release $TAG already exists"
@@ -257,11 +398,21 @@ check_existing_release() {
 
 # Create GitHub release
 create_release() {
-    step "7/7" "Creating GitHub release..."
+    step "8/8" "Creating GitHub release..."
     cd "$REPO_ROOT"
     
+    # Build the What's New section from changelog content
+    WHATS_NEW_SECTION=""
+    if [ -n "$CHANGELOG_CONTENT" ]; then
+        WHATS_NEW_SECTION="## What's New
+
+$CHANGELOG_CONTENT
+
+"
+    fi
+    
     RELEASE_NOTES=$(cat << EOF
-## Installation
+${WHATS_NEW_SECTION}## Installation
 
 \`\`\`bash
 curl -fsSL https://raw.githubusercontent.com/RooCodeInc/Roo-Code/main/apps/cli/install.sh | sh
@@ -284,7 +435,7 @@ ROO_VERSION=$VERSION curl -fsSL https://raw.githubusercontent.com/RooCodeInc/Roo
 export OPENROUTER_API_KEY=sk-or-v1-...
 
 # Run a task
-roo "What is this project?" --workspace ~/my-project
+roo "What is this project?" ~/my-project
 
 # See all options
 roo --help
@@ -358,8 +509,10 @@ main() {
     detect_platform
     check_prerequisites
     get_version "$1"
+    get_changelog_content
     build
     create_tarball
+    verify_local_install
     create_checksum
     check_existing_release
     create_release

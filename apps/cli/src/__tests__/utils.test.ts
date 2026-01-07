@@ -80,8 +80,17 @@ describe("getApiKeyFromEnv", () => {
 })
 
 describe("getDefaultExtensionPath", () => {
+	const originalEnv = process.env
+
 	beforeEach(() => {
 		vi.resetAllMocks()
+		// Reset process.env to avoid ROO_EXTENSION_PATH from installed CLI affecting tests
+		process.env = { ...originalEnv }
+		delete process.env.ROO_EXTENSION_PATH
+	})
+
+	afterEach(() => {
+		process.env = originalEnv
 	})
 
 	it("should return monorepo path when extension.js exists there", () => {
