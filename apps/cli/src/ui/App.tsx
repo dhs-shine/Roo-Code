@@ -34,6 +34,7 @@ import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
 import ScrollIndicator from "./components/ScrollIndicator.js"
 import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
 import * as theme from "./utils/theme.js"
+import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
 import type {
 	AppProps,
 	TUIMessage,
@@ -230,8 +231,7 @@ function AppInner({
 	const exitHintTimeout = useRef<NodeJS.Timeout | null>(null)
 	const pendingExit = useRef(false)
 
-	// Countdown timer for auto-accepting followup questions (10 seconds for testing)
-	const FOLLOWUP_TIMEOUT_SECONDS = 10
+	// Countdown timer for auto-accepting followup questions
 	const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
 	const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 

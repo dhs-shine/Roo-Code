@@ -25,6 +25,7 @@ import {
 } from "@roo-code/types"
 import { createVSCodeAPI, setRuntimeConfigValues } from "@roo-code/vscode-shim"
 import { debugLog } from "@roo-code/core/debug-log"
+import { FOLLOWUP_TIMEOUT_SECONDS } from "./constants.js"
 
 // Get the CLI package root directory (for finding node_modules/@vscode/ripgrep)
 // When bundled, import.meta.url points to dist/index.js, so go up to package root
@@ -549,46 +550,36 @@ export class ExtensionHost extends EventEmitter {
 		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
 		this.on("extensionWebviewMessage", this.messageListener)
 
-		let defaultSettings: RooCodeSettings
-
-		if (this.options.nonInteractive) {
-			defaultSettings = {
-				autoApprovalEnabled: true,
-				alwaysAllowReadOnly: true,
-				alwaysAllowReadOnlyOutsideWorkspace: true,
-				alwaysAllowWrite: true,
-				alwaysAllowWriteOutsideWorkspace: true,
-				alwaysAllowWriteProtected: false,
-				alwaysAllowBrowser: true,
-				alwaysAllowMcp: true,
-				alwaysAllowModeSwitch: true,
-				alwaysAllowSubtasks: true,
-				alwaysAllowExecute: true,
-				alwaysAllowFollowupQuestions: true,
-				// NOTE: Setting to 0 should disable extension's internal timeout,
-				// but we need to verify this is working correctly.
-				followupAutoApproveTimeoutMs: 0,
-				allowedCommands: ["*"],
-				commandExecutionTimeout: 20,
-				enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
-			}
-		} else {
-			defaultSettings = {
-				autoApprovalEnabled: false,
-				enableCheckpoints: false,
-			}
+		const baseSettings: RooCodeSettings = {
+			commandExecutionTimeout: 30,
+			enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
+			...this.buildApiConfiguration(),
 		}
 
-		const settings = { ...defaultSettings, ...this.buildApiConfiguration() }
+		const settings: RooCodeSettings = this.options.nonInteractive
+			? {
+					autoApprovalEnabled: true,
+					alwaysAllowReadOnly: true,
+					alwaysAllowReadOnlyOutsideWorkspace: true,
+					alwaysAllowWrite: true,
+					alwaysAllowWriteOutsideWorkspace: true,
+					alwaysAllowWriteProtected: false,
+					alwaysAllowBrowser: true,
+					alwaysAllowMcp: true,
+					alwaysAllowModeSwitch: true,
+					alwaysAllowSubtasks: true,
+					alwaysAllowExecute: true,
+					allowedCommands: ["*"],
+					...baseSettings,
+				}
+			: {
+					autoApprovalEnabled: false,
+					...baseSettings,
+				}
+
 		this.applyRuntimeSettings(settings)
-
-		this.sendToExtension({
-			type: "updateSettings",
-			updatedSettings: settings,
-		})
-
+		this.sendToExtension({ type: "updateSettings", updatedSettings: settings })
 		await new Promise<void>((resolve) => setTimeout(resolve, 100))
-
 		this.sendToExtension({ type: "newTask", text: prompt })
 		await this.waitForCompletion()
 	}
@@ -639,50 +630,6 @@ export class ExtensionHost extends EventEmitter {
 
 		const text = args.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg))).join(" ")
 		process.stderr.write(text + "\n")
-	}
-
-	/**
-	 * Get the expected model ID from CLI options
-	 */
-	private getExpectedModelId(): string | undefined {
-		return this.options.model
-	}
-
-	/**
-	 * Get the current model ID from state's apiConfiguration
-	 */
-	private getStateModelId(apiConfig: Record<string, unknown> | undefined): string | undefined {
-		if (!apiConfig) {
-			return undefined
-		}
-
-		const provider = apiConfig.apiProvider as string | undefined
-		switch (provider) {
-			case "openrouter":
-				return apiConfig.openRouterModelId as string | undefined
-			case "openai":
-				return apiConfig.openAiModelId as string | undefined
-			case "ollama":
-				return apiConfig.ollamaModelId as string | undefined
-			case "litellm":
-				return apiConfig.litellmModelId as string | undefined
-			case "lmstudio":
-				return apiConfig.lmStudioModelId as string | undefined
-			case "huggingface":
-				return apiConfig.huggingFaceModelId as string | undefined
-			case "unbound":
-				return apiConfig.unboundModelId as string | undefined
-			case "requesty":
-				return apiConfig.requestyModelId as string | undefined
-			case "deepinfra":
-				return apiConfig.deepInfraModelId as string | undefined
-			case "vercel-ai-gateway":
-				return apiConfig.vercelAiGatewayModelId as string | undefined
-			case "io-intelligence":
-				return apiConfig.ioIntelligenceModelId as string | undefined
-			default:
-				return apiConfig.apiModelId as string | undefined
-		}
 	}
 
 	/**
@@ -1232,8 +1179,7 @@ export class ExtensionHost extends EventEmitter {
 		const firstSuggestion = suggestions.length > 0 ? suggestions[0] : null
 		const defaultAnswer = firstSuggestion?.answer ?? ""
 
-		// Default timeout is 10 seconds for testing (will be configurable later).
-		const timeoutMs = 60_000
+		const timeoutMs = FOLLOWUP_TIMEOUT_SECONDS * 1000
 
 		try {
 			const answer = await this.promptForInputWithTimeout(
@@ -1280,7 +1226,7 @@ export class ExtensionHost extends EventEmitter {
 				this.restoreConsole()
 			}
 
-			// Put stdin in raw mode to detect individual keypresses
+			// Put stdin in raw mode to detect individual keypresses.
 			const wasRaw = process.stdin.isRaw
 
 			if (process.stdin.isTTY) {
@@ -1293,7 +1239,7 @@ export class ExtensionHost extends EventEmitter {
 			let timeoutCancelled = false
 			let resolved = false
 
-			// Set up the timeout
+			// Set up the timeout.
 			const timeout = setTimeout(() => {
 				if (!resolved) {
 					resolved = true
@@ -1303,10 +1249,10 @@ export class ExtensionHost extends EventEmitter {
 				}
 			}, timeoutMs)
 
-			// Show the prompt
+			// Show the prompt.
 			process.stdout.write(prompt)
 
-			// Cleanup function
+			// Cleanup function.
 			const cleanup = () => {
 				clearTimeout(timeout)
 				process.stdin.removeListener("data", onData)
@@ -1700,7 +1646,7 @@ export class ExtensionHost extends EventEmitter {
 			this.once("taskComplete", completeHandler)
 			this.once("taskError", errorHandler)
 
-			// Set a timeout (10 minutes by default)
+			// Set a timeout (10 minutes by default).
 			const timeout = setTimeout(
 				() => {
 					cleanup()
@@ -1709,7 +1655,7 @@ export class ExtensionHost extends EventEmitter {
 				10 * 60 * 1000,
 			)
 
-			// Clear timeout on completion
+			// Clear timeout on completion.
 			this.once("taskComplete", () => clearTimeout(timeout))
 			this.once("taskError", () => clearTimeout(timeout))
 		})
