@@ -100,11 +100,12 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 				return
 			}
 
-			// Set loading state immediately
+			// Set loading state immediately and open picker
 			setState((prev) => ({
 				...prev,
 				activeTrigger: foundTrigger,
 				isLoading: true,
+				isOpen: true, // Open immediately when trigger is detected
 				triggerInfo: foundTriggerInfo,
 			}))
 
@@ -125,7 +126,7 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 							...prev,
 							results,
 							selectedIndex: 0,
-							isOpen: results.length > 0 || query.length > 0,
+							isOpen: true, // Keep open - user can close with Escape
 							isLoading: false,
 						}
 					})
@@ -236,6 +237,75 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 		})
 	}, [])
 
+	/**
+	 * Force refresh the current search results.
+	 * This is used when external async data (like file search results) arrives
+	 * after the initial search returned empty.
+	 * Uses refreshResults if available to avoid triggering new API calls.
+	 *
+	 * IMPORTANT: We must find the current trigger from the `triggers` array,
+	 * not use `state.activeTrigger`, because the triggers array is recreated
+	 * with fresh closures when external data changes.
+	 */
+	const forceRefresh = useCallback(() => {
+		const { activeTrigger, triggerInfo } = state
+
+		// Only refresh if picker is open and we have an active trigger
+		if (!activeTrigger || !triggerInfo) {
+			return
+		}
+
+		// CRITICAL: Find the CURRENT trigger from the triggers array
+		// The state.activeTrigger holds a stale closure, but triggers array has fresh closures
+		const currentTrigger = triggers.find((t) => t.id === activeTrigger.id)
+		if (!currentTrigger) {
+			return
+		}
+
+		const { query } = triggerInfo
+
+		// Use refreshResults if available (doesn't trigger new API call)
+		// Fall back to search() if refreshResults is not implemented
+		const refreshFn = currentTrigger.refreshResults ?? currentTrigger.search
+
+		try {
+			const results = refreshFn(query)
+
+			// Handle both sync and async search results
+			if (results instanceof Promise) {
+				results.then((asyncResults) => {
+					setState((prev) => {
+						// Only update if still the same trigger
+						if (prev.activeTrigger?.id !== activeTrigger.id) {
+							return prev
+						}
+						return {
+							...prev,
+							results: asyncResults,
+							selectedIndex: 0,
+							isLoading: false,
+						}
+					})
+				})
+			} else {
+				setState((prev) => {
+					// Only update if still the same trigger
+					if (prev.activeTrigger?.id !== activeTrigger.id) {
+						return prev
+					}
+					return {
+						...prev,
+						results,
+						selectedIndex: 0,
+						isLoading: false,
+					}
+				})
+			}
+		} catch (_error) {
+			// Silently fail on refresh errors
+		}
+	}, [state, triggers])
+
 	const actions: AutocompletePickerActions<T> = {
 		handleInputChange,
 		handleSelect,
@@ -243,6 +313,7 @@ export function useAutocompletePicker<T extends AutocompleteItem>(
 		handleIndexChange,
 		navigateUp,
 		navigateDown,
+		forceRefresh,
 	}
 
 	return [state, actions]

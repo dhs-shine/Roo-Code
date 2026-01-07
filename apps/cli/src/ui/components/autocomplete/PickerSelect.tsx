@@ -103,7 +103,8 @@ export function PickerSelect<T extends AutocompleteItem>({
 			isActive={false}
 			showScrollbar={true}
 			scrollToLine={selectedIndex}
-			scrollToLineTrigger={scrollTrigger}>
+			scrollToLineTrigger={scrollTrigger}
+			autoScroll={false}>
 			{results.map((result, index) => {
 				const isSelected = index === selectedIndex
 				return <Box key={result.key}>{renderItem(result, isSelected)}</Box>

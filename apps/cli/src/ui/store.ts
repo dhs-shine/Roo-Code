@@ -1,8 +1,8 @@
 import { create } from "zustand"
 
-import type { TokenUsage, ProviderSettings } from "@roo-code/types"
+import type { TokenUsage, ProviderSettings, TodoItem } from "@roo-code/types"
 
-import type { TUIMessage, PendingAsk, FileSearchResult, SlashCommandResult } from "./types.js"
+import type { TUIMessage, PendingAsk, FileSearchResult, SlashCommandResult, ModeResult } from "./types.js"
 
 /**
  * RouterModels type for context window lookup.
@@ -31,6 +31,10 @@ interface CLIState {
 	// Autocomplete data (from API/extension)
 	fileSearchResults: FileSearchResult[]
 	allSlashCommands: SlashCommandResult[]
+	availableModes: ModeResult[]
+
+	// Current mode (updated reactively when mode changes)
+	currentMode: string | null
 
 	// Token usage metrics (from getApiMetrics)
 	tokenUsage: TokenUsage | null
@@ -38,6 +42,10 @@ interface CLIState {
 	// Model info for context window lookup
 	routerModels: RouterModels | null
 	apiConfiguration: ProviderSettings | null
+
+	// Todo list tracking
+	currentTodos: TodoItem[]
+	previousTodos: TodoItem[]
 }
 
 interface CLIActions {
@@ -56,11 +64,18 @@ interface CLIActions {
 	// Autocomplete data actions
 	setFileSearchResults: (results: FileSearchResult[]) => void
 	setAllSlashCommands: (commands: SlashCommandResult[]) => void
+	setAvailableModes: (modes: ModeResult[]) => void
+
+	// Current mode action
+	setCurrentMode: (mode: string | null) => void
 
 	// Metrics actions
 	setTokenUsage: (usage: TokenUsage | null) => void
 	setRouterModels: (models: RouterModels | null) => void
 	setApiConfiguration: (config: ProviderSettings | null) => void
+
+	// Todo actions
+	setTodos: (todos: TodoItem[]) => void
 }
 
 const initialState: CLIState = {
@@ -72,9 +87,13 @@ const initialState: CLIState = {
 	error: null,
 	fileSearchResults: [],
 	allSlashCommands: [],
+	availableModes: [],
+	currentMode: null,
 	tokenUsage: null,
 	routerModels: null,
 	apiConfiguration: null,
+	currentTodos: [],
+	previousTodos: [],
 }
 
 export const useCLIStore = create<CLIState & CLIActions>((set) => ({
@@ -129,7 +148,14 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	reset: () => set(initialState),
 	setFileSearchResults: (results) => set({ fileSearchResults: results }),
 	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
+	setAvailableModes: (modes) => set({ availableModes: modes }),
+	setCurrentMode: (mode) => set({ currentMode: mode }),
 	setTokenUsage: (usage) => set({ tokenUsage: usage }),
 	setRouterModels: (models) => set({ routerModels: models }),
 	setApiConfiguration: (config) => set({ apiConfiguration: config }),
+	setTodos: (todos) =>
+		set((state) => ({
+			previousTodos: state.currentTodos,
+			currentTodos: todos,
+		})),
 }))

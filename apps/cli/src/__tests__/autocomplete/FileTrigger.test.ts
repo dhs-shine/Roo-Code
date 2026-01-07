@@ -95,7 +95,7 @@ describe("FileTrigger", () => {
 	})
 
 	describe("search", () => {
-		it("should call onSearch and return current results", () => {
+		it("should call onSearch and return empty array immediately (async pattern)", () => {
 			const onSearch = vi.fn()
 			const mockResults: FileResult[] = [{ key: "test.ts", path: "test.ts", type: "file" }]
 			const getResults = vi.fn(() => mockResults)
@@ -103,9 +103,92 @@ describe("FileTrigger", () => {
 
 			const result = trigger.search("test")
 
+			// search() should trigger the API call
 			expect(onSearch).toHaveBeenCalledWith("test")
+			// search() should return empty immediately for async sources
+			// (actual results come via refreshResults when API responds)
+			expect(result).toEqual([])
+			// getResults should NOT be called by search() - that's the async fix
+			expect(getResults).not.toHaveBeenCalled()
+		})
+
+		it("should return empty array when no results", () => {
+			const onSearch = vi.fn()
+			const getResults = vi.fn(() => [])
+			const trigger = createFileTrigger({ onSearch, getResults })
+
+			const result = trigger.search("test")
+
+			expect(result).toEqual([])
+		})
+	})
+
+	describe("refreshResults", () => {
+		it("should call getResults and return current results", () => {
+			const onSearch = vi.fn()
+			const mockResults: FileResult[] = [{ key: "test.ts", path: "test.ts", type: "file" }]
+			const getResults = vi.fn(() => mockResults)
+			const trigger = createFileTrigger({ onSearch, getResults })
+
+			const result = trigger.refreshResults!("test")
+
+			// refreshResults should call getResults (not onSearch)
 			expect(getResults).toHaveBeenCalled()
-			expect(result).toBe(mockResults)
+			expect(onSearch).not.toHaveBeenCalled()
+			expect(result).toEqual(mockResults)
+		})
+
+		it("should sort results by fuzzy match score (best matches first)", () => {
+			const onSearch = vi.fn()
+			const mockResults: FileResult[] = [
+				{ key: "src/components/Button.tsx", path: "src/components/Button.tsx", type: "file" },
+				{ key: "app.ts", path: "app.ts", type: "file" },
+				{ key: "src/app.tsx", path: "src/app.tsx", type: "file" },
+				{ key: "tests/app.test.ts", path: "tests/app.test.ts", type: "file" },
+			]
+			const getResults = vi.fn(() => mockResults)
+			const trigger = createFileTrigger({ onSearch, getResults })
+
+			const result = trigger.refreshResults!("app") as FileResult[]
+
+			// Results should be sorted with best matches first
+			// "app.ts" should rank higher than "src/app.tsx" or "tests/app.test.ts"
+			expect(result[0]?.path).toBe("app.ts")
+		})
+
+		it("should filter out results that don't match well", () => {
+			const onSearch = vi.fn()
+			const mockResults: FileResult[] = [
+				{ key: "src/test.ts", path: "src/test.ts", type: "file" },
+				{ key: "config.json", path: "config.json", type: "file" },
+			]
+			const getResults = vi.fn(() => mockResults)
+			const trigger = createFileTrigger({ onSearch, getResults })
+
+			const result = trigger.refreshResults!("xyz") as FileResult[]
+
+			// Results that don't match well are filtered out by fuzzysort
+			expect(result.length).toBeLessThan(mockResults.length)
+		})
+
+		it("should return results sorted with partial matches", () => {
+			const onSearch = vi.fn()
+			const mockResults: FileResult[] = [
+				{ key: "src/test.ts", path: "src/test.ts", type: "file" },
+				{ key: "tests/unit.ts", path: "tests/unit.ts", type: "file" },
+				{ key: "package.json", path: "package.json", type: "file" },
+			]
+			const getResults = vi.fn(() => mockResults)
+			const trigger = createFileTrigger({ onSearch, getResults })
+
+			const result = trigger.refreshResults!("test") as FileResult[]
+
+			// Should return files that match "test"
+			expect(result.length).toBeGreaterThan(0)
+			// All returned results should contain "test" in their path
+			result.forEach((r: FileResult) => {
+				expect(r.path.toLowerCase()).toContain("test")
+			})
 		})
 	})
 })

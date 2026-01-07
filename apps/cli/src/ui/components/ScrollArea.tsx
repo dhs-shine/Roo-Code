@@ -161,6 +161,8 @@ export interface ScrollAreaProps {
 	scrollToLine?: number
 	scrollToLineTrigger?: number
 	showScrollbar?: boolean
+	/** Whether to auto-scroll to bottom when content grows. Default: true */
+	autoScroll?: boolean
 }
 
 export function ScrollArea({
@@ -173,6 +175,7 @@ export function ScrollArea({
 	scrollToLine,
 	scrollToLineTrigger,
 	showScrollbar = true,
+	autoScroll: autoScrollProp = true,
 }: ScrollAreaProps) {
 	// Ref for measuring outer container height when not provided
 	const outerRef = useRef<DOMElement>(null)
@@ -185,7 +188,7 @@ export function ScrollArea({
 		height: height,
 		scrollTop: 0,
 		innerHeight: 0,
-		autoScroll: true,
+		autoScroll: autoScrollProp,
 	})
 
 	const innerRef = useRef<DOMElement>(null)

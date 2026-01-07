@@ -6,7 +6,7 @@ import { randomUUID } from "crypto"
 
 // Import only message-utils to avoid custom-tools dependencies (execa/child_process)
 import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
-import type { ClineMessage } from "@roo-code/types"
+import type { ClineMessage, TodoItem } from "@roo-code/types"
 
 import { useCLIStore } from "./store.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
@@ -18,13 +18,16 @@ import {
 	PickerSelect,
 	createFileTrigger,
 	createSlashCommandTrigger,
+	createModeTrigger,
 	toFileResult,
 	toSlashCommandResult,
+	toModeResult,
 	type AutocompleteInputHandle,
 	type AutocompletePickerState,
 	type AutocompleteTrigger,
 	type FileResult,
 	type SlashCommandResult as SlashCommandItem,
+	type ModeResult as ModeItem,
 } from "./components/autocomplete/index.js"
 import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
 import ScrollIndicator from "./components/ScrollIndicator.js"
@@ -39,6 +42,7 @@ import type {
 	View,
 	FileSearchResult,
 	SlashCommandResult,
+	ModeResult,
 } from "./types.js"
 
 // Layout constants
@@ -169,14 +173,20 @@ function AppInner({
 		setError,
 		fileSearchResults,
 		allSlashCommands,
+		availableModes,
 		setFileSearchResults,
 		setAllSlashCommands,
+		setAvailableModes,
+		currentMode,
+		setCurrentMode,
 		tokenUsage,
 		routerModels,
 		apiConfiguration,
 		setTokenUsage,
 		setRouterModels,
 		setApiConfiguration,
+		currentTodos,
+		setTodos,
 	} = useCLIStore()
 
 	// Compute context window from router models and API configuration
@@ -279,9 +289,12 @@ function AppInner({
 		}
 	}, [])
 
-	// File search handler for the file trigger
+	// File search handler for the file trigger.
 	const handleFileSearch = useCallback((query: string) => {
-		if (!hostRef.current) return
+		if (!hostRef.current) {
+			return
+		}
+
 		hostRef.current.sendToExtension({
 			type: "searchFiles",
 			query,
@@ -289,7 +302,7 @@ function AppInner({
 	}, [])
 
 	// Create autocomplete triggers
-	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult)
+	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const autocompleteTriggers = useMemo((): AutocompleteTrigger<any>[] => {
 		const fileTrigger = createFileTrigger({
@@ -301,8 +314,12 @@ function AppInner({
 			getCommands: () => allSlashCommands.map(toSlashCommandResult),
 		})
 
-		return [fileTrigger, slashCommandTrigger]
-	}, [handleFileSearch, fileSearchResults, allSlashCommands])
+		const modeTrigger = createModeTrigger({
+			getModes: () => availableModes.map(toModeResult),
+		})
+
+		return [fileTrigger, slashCommandTrigger, modeTrigger]
+	}, [handleFileSearch, fileSearchResults, allSlashCommands, availableModes])
 
 	// Handle Ctrl+C and Tab for focus switching
 	useInput((input, key) => {
@@ -356,6 +373,16 @@ function AppInner({
 		}
 	}, [])
 
+	// FIX: Refresh search results when fileSearchResults changes while file picker is open
+	// This fixes the async timing issue where getResults() returns empty before API responds
+	// Only refresh when we actually have results (not on initial empty state)
+	useEffect(() => {
+		if (pickerState.isOpen && pickerState.activeTrigger?.id === "file" && fileSearchResults.length > 0) {
+			autocompleteRef.current?.refreshSearch()
+			followupAutocompleteRef.current?.refreshSearch()
+		}
+	}, [fileSearchResults, pickerState.isOpen, pickerState.activeTrigger?.id])
+
 	// Map extension say messages to TUI messages
 	const handleSayMessage = useCallback(
 		(ts: number, say: SayType, text: string, partial: boolean) => {
@@ -400,6 +427,32 @@ function AppInner({
 					toolName = toolInfo.tool
 					toolDisplayName = toolInfo.tool
 					toolDisplayOutput = formatToolOutput(toolInfo)
+
+					// Special handling for update_todo_list tool
+					if (toolName === "update_todo_list" || toolName === "updateTodoList") {
+						const todos = parseTodosFromToolInfo(toolInfo)
+						if (todos && todos.length > 0) {
+							// Capture previous todos before updating
+							const prevTodos = [...currentTodos]
+							setTodos(todos)
+
+							seenMessageIds.current.add(messageId)
+
+							addMessage({
+								id: messageId,
+								role: "tool",
+								content: text || "",
+								toolName,
+								toolDisplayName,
+								toolDisplayOutput,
+								partial,
+								originalType: say,
+								todos,
+								previousTodos: prevTodos,
+							})
+							return
+						}
+					}
 				} catch {
 					toolDisplayOutput = text
 				}
@@ -420,7 +473,7 @@ function AppInner({
 				originalType: say,
 			})
 		},
-		[addMessage, verbose],
+		[addMessage, verbose, currentTodos, setTodos],
 	)
 
 	// Handle extension ask messages
@@ -528,6 +581,11 @@ function AppInner({
 				const state = msg.state as Record<string, unknown>
 				if (!state) return
 
+				// Extract and update current mode from state
+				const newMode = state.mode as string | undefined
+				if (newMode) {
+					setCurrentMode(newMode)
+				}
 				const clineMessages = state.clineMessages as Array<Record<string, unknown>> | undefined
 				if (clineMessages) {
 					for (const clineMsg of clineMessages) {
@@ -589,6 +647,19 @@ function AppInner({
 					source: cmd.source,
 				}))
 				setAllSlashCommands(slashCommands)
+			} else if (msg.type === "modes") {
+				const modes =
+					(msg.modes as Array<{
+						slug: string
+						name: string
+						description?: string
+					}>) || []
+				const modeResults: ModeResult[] = modes.map((mode) => ({
+					slug: mode.slug,
+					name: mode.name,
+					description: mode.description,
+				}))
+				setAvailableModes(modeResults)
 			} else if (msg.type === "routerModels") {
 				// Handle router models for context window lookup
 				const models = msg.models as Record<string, Record<string, { contextWindow?: number }>> | undefined
@@ -608,6 +679,8 @@ function AppInner({
 			handleAskMessage,
 			setFileSearchResults,
 			setAllSlashCommands,
+			setAvailableModes,
+			setCurrentMode,
 			setTokenUsage,
 			setRouterModels,
 			setApiConfiguration,
@@ -654,6 +727,7 @@ function AppInner({
 				await host.activate()
 
 				host.sendToExtension({ type: "requestCommands" })
+				host.sendToExtension({ type: "requestModes" })
 
 				setLoading(false)
 
@@ -798,11 +872,30 @@ function AppInner({
 	}, [])
 
 	// Handle item selection from external PickerSelect
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const handlePickerSelect = useCallback((item: any) => {
-		autocompleteRef.current?.handleItemSelect(item)
-		followupAutocompleteRef.current?.handleItemSelect(item)
-	}, [])
+	const handlePickerSelect = useCallback(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(item: any) => {
+			// Check if this is a mode selection
+			if (pickerState.activeTrigger?.id === "mode" && item && typeof item === "object" && "slug" in item) {
+				const modeItem = item as ModeItem
+				// Send mode change message to extension
+				if (hostRef.current) {
+					hostRef.current.sendToExtension({
+						type: "switchMode",
+						mode: modeItem.slug,
+					})
+				}
+				// Close the picker
+				autocompleteRef.current?.closePicker()
+				followupAutocompleteRef.current?.closePicker()
+			} else {
+				// Handle other item selections normally
+				autocompleteRef.current?.handleItemSelect(item)
+				followupAutocompleteRef.current?.handleItemSelect(item)
+			}
+		},
+		[pickerState.activeTrigger],
+	)
 
 	// Handle picker close from external PickerSelect
 	const handlePickerClose = useCallback(() => {
@@ -870,7 +963,7 @@ function AppInner({
 			<Box flexShrink={0}>
 				<Header
 					model={model}
-					mode={mode}
+					mode={currentMode || mode}
 					cwd={workspacePath}
 					reasoningEffort={reasoningEffort}
 					version={version}
@@ -1096,6 +1189,12 @@ function formatToolOutput(toolInfo: Record<string, unknown>): string {
 			return `📋 Creating subtask${taskMode ? ` in ${taskMode} mode` : ""}`
 		}
 
+		case "update_todo_list":
+		case "updateTodoList": {
+			// Special marker - actual rendering is handled by TodoChangeDisplay component
+			return "☑ TODO list updated"
+		}
+
 		default: {
 			const params = Object.entries(toolInfo)
 				.filter(([key]) => key !== "tool")
@@ -1166,4 +1265,78 @@ function formatToolAskMessage(toolInfo: Record<string, unknown>): string {
 			return `${toolName}${params ? `\n${params}` : ""}`
 		}
 	}
+}
+
+/**
+ * Parse TODO items from tool info
+ * Handles both array format and markdown checklist string format
+ */
+function parseTodosFromToolInfo(toolInfo: Record<string, unknown>): TodoItem[] | null {
+	// Try to get todos directly as an array
+	const todosArray = toolInfo.todos as unknown[] | undefined
+	if (Array.isArray(todosArray)) {
+		return todosArray
+			.map((item, index) => {
+				if (typeof item === "object" && item !== null) {
+					const todo = item as Record<string, unknown>
+					return {
+						id: (todo.id as string) || `todo-${index}`,
+						content: (todo.content as string) || "",
+						status: ((todo.status as string) || "pending") as TodoItem["status"],
+					}
+				}
+				return null
+			})
+			.filter((item): item is TodoItem => item !== null)
+	}
+
+	// Try to parse markdown checklist format from todos string
+	const todosString = toolInfo.todos as string | undefined
+	if (typeof todosString === "string") {
+		return parseMarkdownChecklist(todosString)
+	}
+
+	return null
+}
+
+/**
+ * Parse a markdown checklist string into TodoItem array
+ * Format:
+ *   [ ] pending item
+ *   [-] in progress item
+ *   [x] completed item
+ */
+function parseMarkdownChecklist(markdown: string): TodoItem[] {
+	const lines = markdown.split("\n")
+	const todos: TodoItem[] = []
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]
+		if (!line) continue
+
+		const trimmedLine = line.trim()
+		if (!trimmedLine) continue
+
+		// Match markdown checkbox patterns
+		const checkboxMatch = trimmedLine.match(/^\[([x\-\s])\]\s*(.+)$/i)
+		if (checkboxMatch) {
+			const statusChar = checkboxMatch[1] ?? " "
+			const content = checkboxMatch[2] ?? ""
+			let status: TodoItem["status"] = "pending"
+
+			if (statusChar.toLowerCase() === "x") {
+				status = "completed"
+			} else if (statusChar === "-") {
+				status = "in_progress"
+			}
+
+			todos.push({
+				id: `todo-${i}`,
+				content: content.trim(),
+				status,
+			})
+		}
+	}
+
+	return todos
 }

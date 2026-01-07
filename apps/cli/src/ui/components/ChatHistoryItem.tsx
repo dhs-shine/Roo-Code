@@ -3,6 +3,7 @@ import { Box, Newline, Text } from "ink"
 
 import * as theme from "../utils/theme.js"
 import type { TUIMessage } from "../types.js"
+import TodoDisplay from "./TodoDisplay.js"
 
 interface ChatHistoryItemProps {
 	message: TUIMessage
@@ -49,6 +50,22 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 				</Box>
 			)
 		case "tool": {
+			// Special rendering for update_todo_list tool - show full TODO list
+			if (
+				(message.toolName === "update_todo_list" || message.toolName === "updateTodoList") &&
+				message.todos &&
+				message.todos.length > 0
+			) {
+				return (
+					<Box flexDirection="column">
+						<TodoDisplay todos={message.todos} previousTodos={message.previousTodos} showProgress={true} />
+						<Text>
+							<Newline />
+						</Text>
+					</Box>
+				)
+			}
+
 			let toolContent = message.toolDisplayOutput || content
 
 			// Replace tab characters with spaces to prevent terminal width miscalculation

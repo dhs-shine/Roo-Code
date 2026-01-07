@@ -38,6 +38,8 @@ export interface AutocompleteInputHandle<T extends AutocompleteItem = Autocomple
 	handleIndexChange: (index: number) => void
 	/** Close the picker */
 	closePicker: () => void
+	/** Force refresh search results (used when async data arrives after initial search) */
+	refreshSearch: () => void
 }
 
 /**
@@ -114,11 +116,15 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 			const lastLine = getLastLine(value)
 			pickerActions.handleInputChange(value, lastLine)
 
-			if (!isBrowsing) {
+			// If user types while browsing history, exit browsing mode
+			// This prevents the history effect from overwriting their edits
+			if (isBrowsing) {
+				resetBrowsing(value)
+			} else {
 				setDraft(value)
 			}
 		},
-		[pickerActions, isBrowsing, setDraft, getLastLine],
+		[pickerActions, isBrowsing, setDraft, getLastLine, resetBrowsing],
 	)
 
 	/**
@@ -209,8 +215,15 @@ function AutocompleteInputInner<T extends AutocompleteItem>(
 			handleItemSelect,
 			handleIndexChange: pickerActions.handleIndexChange,
 			closePicker: pickerActions.handleClose,
+			refreshSearch: pickerActions.forceRefresh,
 		}),
-		[pickerState, handleItemSelect, pickerActions.handleIndexChange, pickerActions.handleClose],
+		[
+			pickerState,
+			handleItemSelect,
+			pickerActions.handleIndexChange,
+			pickerActions.handleClose,
+			pickerActions.forceRefresh,
+		],
 	)
 
 	return (

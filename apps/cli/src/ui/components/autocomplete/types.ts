@@ -61,6 +61,15 @@ export interface AutocompleteTrigger<T extends AutocompleteItem = AutocompleteIt
 	search: (query: string) => T[] | Promise<T[]>
 
 	/**
+	 * Get current results without triggering a new search.
+	 * Used for refreshing results when async data arrives.
+	 * If not provided, forceRefresh will fall back to search().
+	 * @param query - The search query for filtering
+	 * @returns Array of matching items from current data
+	 */
+	refreshResults?: (query: string) => T[] | Promise<T[]>
+
+	/**
 	 * Render a single item in the picker dropdown.
 	 * @param item - The item to render
 	 * @param isSelected - Whether this item is currently selected
@@ -124,4 +133,6 @@ export interface AutocompletePickerActions<T extends AutocompleteItem> {
 	navigateUp: () => void
 	/** Navigate selection down */
 	navigateDown: () => void
+	/** Force refresh the current search results (for async data that arrived after initial search) */
+	forceRefresh: () => void
 }

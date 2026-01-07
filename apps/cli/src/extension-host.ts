@@ -633,6 +633,11 @@ export class ExtensionHost extends EventEmitter {
 				this.handleInvokeMessage(msg)
 				break
 
+			case "modes":
+				// Forward modes list to the TUI
+				this.emit("extensionWebviewMessage", msg)
+				break
+
 			default:
 				// Log unknown message types in verbose mode
 				if (this.options.verbose) {

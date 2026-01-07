@@ -1,4 +1,7 @@
-import type { ClineAsk, ClineSay } from "@roo-code/types"
+import type { ClineAsk, ClineSay, TodoItem } from "@roo-code/types"
+
+// Re-export TodoItem for convenience
+export type { TodoItem }
 
 export type MessageRole = "system" | "user" | "assistant" | "tool" | "thinking"
 
@@ -41,6 +44,10 @@ export interface TUIMessage {
 	hasPendingToolCalls?: boolean
 	partial?: boolean
 	originalType?: SayType | AskType
+	/** TODO items for update_todo_list tool messages */
+	todos?: TodoItem[]
+	/** Previous TODO items for diff display */
+	previousTodos?: TodoItem[]
 }
 
 export interface PendingAsk {
@@ -79,4 +86,11 @@ export interface SlashCommandResult {
 	description?: string
 	argumentHint?: string
 	source: "global" | "project" | "built-in"
+}
+
+export interface ModeResult {
+	slug: string
+	name: string
+	description?: string
+	icon?: string
 }

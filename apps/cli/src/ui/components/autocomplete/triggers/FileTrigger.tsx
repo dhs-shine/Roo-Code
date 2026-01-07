@@ -1,5 +1,7 @@
 import { Box, Text } from "ink"
+import Fuzzysort from "fuzzysort"
 
+import { Icon } from "../../Icon.js"
 import type { AutocompleteTrigger, AutocompleteItem, TriggerDetectionResult } from "../types.js"
 
 /**
@@ -37,11 +39,33 @@ export interface FileTriggerConfig {
  * This trigger activates when the user types @ followed by text,
  * and allows selecting files to insert as @/path references.
  *
+ * The file trigger uses async data fetching:
+ * - search() triggers the API call and returns [] immediately
+ * - When API responds, App.tsx calls forceRefresh()
+ * - refreshResults() then returns the actual results from the store
+ *
  * @param config - Configuration for the trigger
  * @returns AutocompleteTrigger for file mentions
  */
 export function createFileTrigger(config: FileTriggerConfig): AutocompleteTrigger<FileResult> {
 	const { onSearch, getResults } = config
+
+	// Helper function to get results and apply fuzzy sorting
+	function getResultsWithFuzzySort(query: string): FileResult[] {
+		const results = getResults()
+
+		// Sort results by fuzzy match score (best matches first)
+		if (!query || results.length === 0) {
+			return results
+		}
+
+		const fuzzyResults = Fuzzysort.go(query, results, {
+			key: "path",
+			threshold: -10000, // Include all results
+		})
+
+		return fuzzyResults.map((result) => result.obj)
+	}
 
 	return {
 		id: "file",
@@ -73,19 +97,31 @@ export function createFileTrigger(config: FileTriggerConfig): AutocompleteTrigge
 		},
 
 		search: (query: string): FileResult[] => {
-			// Trigger the external search
+			// Trigger the external async search
 			onSearch(query)
-			// Return current results from store
-			// Results will update asynchronously and trigger a re-render
-			return getResults()
+
+			// Return empty immediately - don't bother calling getResults() since
+			// we know the async API hasn't responded yet.
+			// When results arrive, App.tsx will call forceRefresh() which uses
+			// refreshResults() to get the actual data from the store.
+			return []
+		},
+
+		// refreshResults: Get current results without triggering a new API call
+		// This is used by forceRefresh when async results arrive
+		refreshResults: (query: string): FileResult[] => {
+			return getResultsWithFuzzySort(query)
 		},
 
 		renderItem: (item: FileResult, isSelected: boolean) => {
-			const displayPath = item.type === "folder" ? `${item.path}/` : item.path
+			const iconName = item.type === "folder" ? "folder" : "file"
+			const color = isSelected ? "cyan" : item.type === "folder" ? "blue" : undefined
 
 			return (
 				<Box paddingLeft={2}>
-					<Text color={isSelected ? "cyan" : undefined}>{displayPath}</Text>
+					<Icon name={iconName} color={color} />
+					<Text> </Text>
+					<Text color={color}>{item.path}</Text>
 				</Box>
 			)
 		},

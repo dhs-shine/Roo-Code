@@ -2870,6 +2870,29 @@ export const webviewMessageHandler = async (
 			}
 			break
 		}
+		case "requestModes": {
+			try {
+				const modes = await provider.getModes()
+				await provider.postMessageToWebview({
+					type: "modes",
+					modes,
+				})
+			} catch (error) {
+				provider.log(`Error fetching modes: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`)
+				// Send empty array on error
+				await provider.postMessageToWebview({
+					type: "modes",
+					modes: [],
+				})
+			}
+			break
+		}
+		case "switchMode": {
+			if (message.mode) {
+				await provider.handleModeSwitch(message.mode as Mode)
+			}
+			break
+		}
 		case "openCommandFile": {
 			try {
 				if (message.text) {

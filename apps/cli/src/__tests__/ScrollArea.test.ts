@@ -161,6 +161,19 @@ describe("ScrollArea reducer", () => {
 			expect(newState.scrollTop).toBe(3) // Unchanged
 		})
 
+		it("should NOT auto-scroll when content grows if autoScroll is disabled (picker use case)", () => {
+			const state: ScrollAreaState = {
+				...initialState,
+				innerHeight: 5,
+				scrollTop: 0,
+				autoScroll: false,
+			}
+			const newState = reducer(state, { type: "SET_INNER_HEIGHT", innerHeight: 20 })
+			expect(newState.innerHeight).toBe(20)
+			// scrollTop should remain at 0, not jump to bottom
+			expect(newState.scrollTop).toBe(0)
+		})
+
 		it("should clamp scrollTop when content shrinks", () => {
 			const state: ScrollAreaState = {
 				...initialState,
