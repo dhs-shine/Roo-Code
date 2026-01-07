@@ -7,6 +7,8 @@ import { randomUUID } from "crypto"
 import type { ClineMessage, TodoItem, WebviewMessage } from "@roo-code/types"
 // Import only message-utils to avoid custom-tools dependencies (execa/child_process)
 import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
+import { toolInspectorLog, clearToolInspectorLog } from "../utils/toolInspectorLogger.js"
+import { arePathsEqual } from "../utils/pathUtils.js"
 
 import { useCLIStore } from "./store.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
@@ -22,15 +24,18 @@ import {
 	createSlashCommandTrigger,
 	createModeTrigger,
 	createHelpTrigger,
+	createHistoryTrigger,
 	toFileResult,
 	toSlashCommandResult,
 	toModeResult,
+	toHistoryResult,
 	type AutocompleteInputHandle,
 	type AutocompletePickerState,
 	type AutocompleteTrigger,
 	type FileResult,
 	type SlashCommandResult as SlashCommandItem,
 	type ModeResult as ModeItem,
+	type HistoryResult,
 } from "./components/autocomplete/index.js"
 import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
 import ScrollIndicator from "./components/ScrollIndicator.js"
@@ -48,6 +53,7 @@ import type {
 	FileSearchResult,
 	SlashCommandResult,
 	ModeResult,
+	TaskHistoryItem,
 } from "./types.js"
 import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
 
@@ -182,9 +188,11 @@ function AppInner({
 		fileSearchResults,
 		allSlashCommands,
 		availableModes,
+		taskHistory,
 		setFileSearchResults,
 		setAllSlashCommands,
 		setAvailableModes,
+		setTaskHistory,
 		currentMode,
 		setCurrentMode,
 		tokenUsage,
@@ -213,6 +221,7 @@ function AppInner({
 	const fileSearchResultsRef = useRef(fileSearchResults)
 	const allSlashCommandsRef = useRef(allSlashCommands)
 	const availableModesRef = useRef(availableModes)
+	const taskHistoryRef = useRef(taskHistory)
 
 	// Keep refs in sync with current state
 	useEffect(() => {
@@ -224,6 +233,9 @@ function AppInner({
 	useEffect(() => {
 		availableModesRef.current = availableModes
 	}, [availableModes])
+	useEffect(() => {
+		taskHistoryRef.current = taskHistory
+	}, [taskHistory])
 
 	// Track seen message timestamps to filter duplicates and the prompt echo
 	const seenMessageIds = useRef<Set<string>>(new Set())
@@ -330,10 +342,10 @@ function AppInner({
 	}, [])
 
 	// Create autocomplete triggers
-	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult, HelpShortcutResult)
+	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult, HelpShortcutResult, HistoryResult)
 	// IMPORTANT: We use refs here to avoid recreating triggers every time data changes.
 	// This prevents the UI flash caused by: data change -> memo recreation -> re-render with stale state
-	// The getResults/getCommands/getModes callbacks always read from refs to get fresh data.
+	// The getResults/getCommands/getModes/getHistory callbacks always read from refs to get fresh data.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const autocompleteTriggers = useMemo((): AutocompleteTrigger<any>[] => {
 		const fileTrigger = createFileTrigger({
@@ -360,8 +372,20 @@ function AppInner({
 
 		const helpTrigger = createHelpTrigger()
 
-		return [fileTrigger, slashCommandTrigger, modeTrigger, helpTrigger]
-	}, [handleFileSearch]) // Only depend on handleFileSearch - data accessed via refs
+		// History trigger - type # to search and resume previous tasks
+		const historyTrigger = createHistoryTrigger({
+			getHistory: () => {
+				// Filter to only show tasks for the current workspace
+				// Use arePathsEqual for proper cross-platform path comparison
+				// (handles trailing slashes, separators, and case sensitivity)
+				const history = taskHistoryRef.current
+				const filtered = history.filter((item) => arePathsEqual(item.workspace, workspacePath))
+				return filtered.map(toHistoryResult)
+			},
+		})
+
+		return [fileTrigger, slashCommandTrigger, modeTrigger, helpTrigger, historyTrigger]
+	}, [handleFileSearch, workspacePath]) // Only depend on handleFileSearch and workspacePath - data accessed via refs
 
 	// Handle Ctrl+C, Tab for focus switching, Escape to cancel task, and Ctrl+M for mode cycling
 	useInput((input, key) => {
@@ -580,6 +604,15 @@ function AppInner({
 				role = "tool"
 				try {
 					const toolInfo = JSON.parse(text)
+
+					// Log tool payload for inspection
+					toolInspectorLog("say:tool", {
+						ts,
+						rawText: text,
+						parsedToolInfo: toolInfo,
+						partial,
+					})
+
 					toolName = toolInfo.tool
 					toolDisplayName = toolInfo.tool
 					toolDisplayOutput = formatToolOutput(toolInfo)
@@ -655,6 +688,9 @@ function AppInner({
 			if (ask === "resume_task" || ask === "resume_completed_task") {
 				seenMessageIds.current.add(messageId)
 				setLoading(false)
+				// Mark that a task has been started so subsequent messages continue the task
+				// (instead of starting a brand new task via runTask)
+				setHasStartedTask(true)
 				// Do not set pendingAsk - let the normal text input appear
 				return
 			}
@@ -677,6 +713,15 @@ function AppInner({
 
 					try {
 						const toolInfo = JSON.parse(text) as Record<string, unknown>
+
+						// Log tool payload for inspection (nonInteractive ask)
+						toolInspectorLog("ask:tool:nonInteractive", {
+							ts,
+							rawText: text,
+							parsedToolInfo: toolInfo,
+							partial,
+						})
+
 						toolName = toolInfo.tool as string
 						toolDisplayName = toolInfo.tool as string
 						toolDisplayOutput = formatToolOutput(toolInfo)
@@ -719,6 +764,15 @@ function AppInner({
 			} else if (ask === "tool") {
 				try {
 					const toolInfo = JSON.parse(text) as Record<string, unknown>
+
+					// Log tool payload for inspection (interactive ask)
+					toolInspectorLog("ask:tool:interactive", {
+						ts,
+						rawText: text,
+						parsedToolInfo: toolInfo,
+						partial,
+					})
+
 					questionText = formatToolAskMessage(toolInfo)
 				} catch {
 					// Use raw text if not valid JSON
@@ -751,6 +805,13 @@ function AppInner({
 				if (newMode) {
 					setCurrentMode(newMode)
 				}
+
+				// Extract and update task history from state
+				const newTaskHistory = state.taskHistory as TaskHistoryItem[] | undefined
+				if (newTaskHistory && Array.isArray(newTaskHistory)) {
+					setTaskHistory(newTaskHistory)
+				}
+
 				const clineMessages = state.clineMessages as Array<Record<string, unknown>> | undefined
 				if (clineMessages) {
 					for (const clineMsg of clineMessages) {
@@ -849,12 +910,22 @@ function AppInner({
 			setTokenUsage,
 			setRouterModels,
 			setApiConfiguration,
+			setTaskHistory,
 		],
 	)
 
 	// Initialize extension host
 	useEffect(() => {
 		const init = async () => {
+			// Clear tool inspector log for fresh session
+			clearToolInspectorLog()
+
+			toolInspectorLog("session:start", {
+				timestamp: new Date().toISOString(),
+				mode,
+				nonInteractive,
+			})
+
 			try {
 				const host = createExtensionHost({
 					mode,
@@ -892,6 +963,8 @@ function AppInner({
 
 				await host.activate()
 
+				// Request initial state from extension (triggers postStateToWebview which includes taskHistory)
+				host.sendToExtension({ type: "webviewDidLaunch" })
 				host.sendToExtension({ type: "requestCommands" })
 				host.sendToExtension({ type: "requestModes" })
 
@@ -946,7 +1019,8 @@ function AppInner({
 						seenMessageIds.current.clear()
 						firstTextMessageSkipped.current = false
 						hostRef.current.sendToExtension({ type: "clearTask" })
-						// Re-request commands and modes since reset() cleared them.
+						// Re-request state, commands and modes since reset() cleared them.
+						hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
 						hostRef.current.sendToExtension({ type: "requestCommands" })
 						hostRef.current.sendToExtension({ type: "requestModes" })
 						return
@@ -1083,13 +1157,46 @@ function AppInner({
 				// Close the picker
 				autocompleteRef.current?.closePicker()
 				followupAutocompleteRef.current?.closePicker()
+			}
+			// Check if this is a history item selection
+			else if (pickerState.activeTrigger?.id === "history" && item && typeof item === "object" && "id" in item) {
+				const historyItem = item as HistoryResult
+
+				// Don't allow task switching while a task is in progress (loading)
+				if (isLoading) {
+					showInfo("Cannot switch tasks while task is in progress", 2000)
+					// Close the picker
+					autocompleteRef.current?.closePicker()
+					followupAutocompleteRef.current?.closePicker()
+					return
+				}
+
+				// Send showTaskWithId message to extension to resume the task
+				if (hostRef.current) {
+					// Reset CLI state before resuming task
+					useCLIStore.getState().reset()
+					seenMessageIds.current.clear()
+					firstTextMessageSkipped.current = false
+
+					// Send message to resume the selected task
+					hostRef.current.sendToExtension({ type: "showTaskWithId", text: historyItem.id })
+
+					// Re-request state, commands and modes since reset() cleared them
+					hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
+					hostRef.current.sendToExtension({ type: "requestCommands" })
+					hostRef.current.sendToExtension({ type: "requestModes" })
+				}
+
+				// Close the picker
+				autocompleteRef.current?.closePicker()
+				followupAutocompleteRef.current?.closePicker()
 			} else {
 				// Handle other item selections normally
 				autocompleteRef.current?.handleItemSelect(item)
 				followupAutocompleteRef.current?.handleItemSelect(item)
 			}
 		},
-		[pickerState.activeTrigger],
+		[pickerState.activeTrigger, isLoading, showInfo],
 	)
 
 	// Handle picker close from external PickerSelect

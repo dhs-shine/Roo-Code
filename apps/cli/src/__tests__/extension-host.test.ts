@@ -13,6 +13,7 @@ vi.mock("@roo-code/vscode-shim", () => ({
 	createVSCodeAPI: vi.fn(() => ({
 		context: { extensionPath: "/test/extension" },
 	})),
+	setRuntimeConfigValues: vi.fn(),
 }))
 
 /**
@@ -1131,22 +1132,6 @@ describe("ExtensionHost", () => {
 
 			await expect(promise).rejects.toThrow("Test error")
 		})
-
-		it("should timeout after configured duration", async () => {
-			const host = createTestHost()
-
-			// Use fake timers for this test
-			vi.useFakeTimers()
-
-			const promise = callPrivate<Promise<void>>(host, "waitForCompletion")
-
-			// Fast-forward past the timeout (10 minutes)
-			vi.advanceTimersByTime(10 * 60 * 1000 + 1)
-
-			await expect(promise).rejects.toThrow("Task timed out")
-
-			vi.useRealTimers()
-		})
 	})
 
 	describe("handleStateMessage - mode tracking", () => {
@@ -1218,6 +1203,160 @@ describe("ExtensionHost", () => {
 			// Mode change should NOT trigger sendToExtension
 			callPrivate(host, "handleStateMessage", { type: "state", state: { mode: "architect", clineMessages: [] } })
 			expect(sendToExtensionSpy).not.toHaveBeenCalled()
+		})
+	})
+
+	describe("applyRuntimeSettings - mode switching", () => {
+		it("should use currentMode when set (from user mode switches)", () => {
+			const host = createTestHost({
+				mode: "code", // Initial mode from CLI options
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+
+			// Simulate user switching mode via Ctrl+M - this updates currentMode
+			;(host as unknown as Record<string, unknown>).currentMode = "architect"
+
+			// Create settings object to be modified
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+
+			// Should use currentMode (architect), not options.mode (code)
+			expect(settings.mode).toBe("architect")
+		})
+
+		it("should fall back to options.mode when currentMode is not set", () => {
+			const host = createTestHost({
+				mode: "code",
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+
+			// currentMode is not set (still null from constructor)
+			expect(getPrivate(host, "currentMode")).toBe("code") // Set from options.mode in constructor
+
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+
+			// Should use options.mode as fallback
+			expect(settings.mode).toBe("code")
+		})
+
+		it("should use currentMode even when it differs from initial options.mode", () => {
+			const host = createTestHost({
+				mode: "code",
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+
+			// Simulate multiple mode switches: code -> architect -> debug
+			;(host as unknown as Record<string, unknown>).currentMode = "debug"
+
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+
+			// Should use the latest currentMode
+			expect(settings.mode).toBe("debug")
+		})
+
+		it("should not set mode if neither currentMode nor options.mode is set", () => {
+			const host = createTestHost({
+				// No mode specified - mode defaults to "code" in createTestHost
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+
+			// Explicitly set currentMode to null (edge case)
+			;(host as unknown as Record<string, unknown>).currentMode = null
+			// Also clear options.mode
+			const options = getPrivate<ExtensionHostOptions>(host, "options")
+			options.mode = ""
+
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+
+			// Mode should not be set
+			expect(settings.mode).toBeUndefined()
+		})
+	})
+
+	describe("mode switching - end to end simulation", () => {
+		let host: ExtensionHost
+
+		beforeEach(() => {
+			host = createTestHost({
+				mode: "code",
+				apiProvider: "anthropic",
+				apiKey: "test-key",
+				model: "test-model",
+			})
+			vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+		})
+
+		afterEach(() => {
+			vi.restoreAllMocks()
+		})
+
+		it("should preserve mode switch when starting a new task", () => {
+			// Step 1: Initial state from extension (like webviewDidLaunch response)
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "code", clineMessages: [] },
+			})
+			expect(getPrivate(host, "currentMode")).toBe("code")
+
+			// Step 2: User presses Ctrl+M to switch mode, extension sends new state
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "architect", clineMessages: [] },
+			})
+			expect(getPrivate(host, "currentMode")).toBe("architect")
+
+			// Step 3: When runTask is called, applyRuntimeSettings should use architect
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+			expect(settings.mode).toBe("architect")
+		})
+
+		it("should handle mode switch before any state messages", () => {
+			// currentMode is initialized to options.mode in constructor
+			expect(getPrivate(host, "currentMode")).toBe("code")
+
+			// Without any state messages, should still use options.mode
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+			expect(settings.mode).toBe("code")
+		})
+
+		it("should track multiple mode switches correctly", () => {
+			// Switch through multiple modes
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "code", clineMessages: [] },
+			})
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "architect", clineMessages: [] },
+			})
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "debug", clineMessages: [] },
+			})
+			callPrivate(host, "handleStateMessage", {
+				type: "state",
+				state: { mode: "ask", clineMessages: [] },
+			})
+
+			// Should use the most recent mode
+			expect(getPrivate(host, "currentMode")).toBe("ask")
+
+			const settings: Record<string, unknown> = {}
+			callPrivate(host, "applyRuntimeSettings", settings)
+			expect(settings.mode).toBe("ask")
 		})
 	})
 

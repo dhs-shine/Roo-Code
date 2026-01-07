@@ -51,18 +51,24 @@ describe("ChatHistoryItem", () => {
 			expect(output).toContain("        function foo() {}") // Double-indented
 		})
 
-		it("sanitizes tabs in tool messages", () => {
+		it("sanitizes tabs in tool messages with parsed content", () => {
+			// Tool messages parse JSON content to extract fields like 'content'
 			const message: TUIMessage = {
 				id: "4",
 				role: "tool",
-				content: '{\n\t"key": "value"\n}',
+				content: JSON.stringify({
+					tool: "read_file",
+					path: "test.js",
+					content: "function() {\n\treturn true;\n}",
+				}),
 				toolName: "read_file",
 			}
 
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			const output = lastFrame()
 
-			expect(output).toContain('    "key": "value"')
+			// The content inside the JSON should be sanitized
+			expect(output).toContain("    return true;")
 			expect(output).not.toContain("\t")
 		})
 
@@ -190,11 +196,11 @@ describe("ChatHistoryItem", () => {
 			expect(output).toContain("Let me think...")
 		})
 
-		it("renders tool messages with tool name", () => {
+		it("renders tool messages with icon and tool display name", () => {
 			const message: TUIMessage = {
 				id: "4",
 				role: "tool",
-				content: "Output",
+				content: JSON.stringify({ tool: "read_file", path: "test.txt", content: "Output text" }),
 				toolName: "read_file",
 				toolDisplayName: "Read File",
 			}
@@ -202,13 +208,66 @@ describe("ChatHistoryItem", () => {
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			const output = lastFrame()
 
-			expect(output).toContain("tool - Read File")
-			expect(output).toContain("Output")
+			// New format uses icon + display name
+			expect(output).toContain("📄 Read File")
+			expect(output).toContain("Output text")
+		})
+
+		it("renders tool messages with path indicator for file tools", () => {
+			const message: TUIMessage = {
+				id: "5",
+				role: "tool",
+				content: JSON.stringify({ tool: "read_file", path: "src/test.ts", content: "file content" }),
+				toolName: "read_file",
+				toolDisplayName: "Read File",
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			expect(output).toContain("file:")
+			expect(output).toContain("src/test.ts")
+		})
+
+		it("renders tool messages with directory path indicator for list tools", () => {
+			const message: TUIMessage = {
+				id: "6",
+				role: "tool",
+				content: JSON.stringify({ tool: "listFilesRecursive", path: "src/", content: "file1\nfile2" }),
+				toolName: "listFilesRecursive",
+				toolDisplayName: "List Files",
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			expect(output).toContain("dir:")
+			expect(output).toContain("src/")
+		})
+
+		it("shows outside workspace warning when applicable", () => {
+			const message: TUIMessage = {
+				id: "7",
+				role: "tool",
+				content: JSON.stringify({
+					tool: "read_file",
+					path: "/etc/hosts",
+					isOutsideWorkspace: true,
+					content: "hosts file",
+				}),
+				toolName: "read_file",
+				toolDisplayName: "Read File",
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			expect(output).toContain("outside workspace")
 		})
 
 		it("uses fallback content when message.content is empty", () => {
 			const message: TUIMessage = {
-				id: "5",
+				id: "8",
 				role: "assistant",
 				content: "",
 			}
@@ -221,7 +280,7 @@ describe("ChatHistoryItem", () => {
 
 		it("returns null for unknown role", () => {
 			const message = {
-				id: "6",
+				id: "9",
 				// eslint-disable-next-line @typescript-eslint/no-explicit-any
 				role: "unknown" as any,
 				content: "Test",
@@ -229,6 +288,39 @@ describe("ChatHistoryItem", () => {
 
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			expect(lastFrame()).toBe("")
+		})
+
+		it("renders command tools with command icon", () => {
+			const message: TUIMessage = {
+				id: "10",
+				role: "tool",
+				content: JSON.stringify({ tool: "execute_command" }),
+				toolName: "execute_command",
+				toolDisplayName: "Execute Command",
+				toolDisplayOutput: "command output",
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			expect(output).toContain("💻 Execute Command")
+			expect(output).toContain("command output")
+		})
+
+		it("renders search tools with search icon", () => {
+			const message: TUIMessage = {
+				id: "11",
+				role: "tool",
+				content: JSON.stringify({ tool: "search_files" }),
+				toolName: "search_files",
+				toolDisplayName: "Search Files",
+				toolDisplayOutput: "search results",
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			expect(output).toContain("🔍 Search Files")
 		})
 	})
 })

@@ -2,7 +2,14 @@ import { create } from "zustand"
 
 import type { TokenUsage, ProviderSettings, TodoItem } from "@roo-code/types"
 
-import type { TUIMessage, PendingAsk, FileSearchResult, SlashCommandResult, ModeResult } from "./types.js"
+import type {
+	TUIMessage,
+	PendingAsk,
+	FileSearchResult,
+	SlashCommandResult,
+	ModeResult,
+	TaskHistoryItem,
+} from "./types.js"
 
 /**
  * RouterModels type for context window lookup.
@@ -32,6 +39,9 @@ interface CLIState {
 	fileSearchResults: FileSearchResult[]
 	allSlashCommands: SlashCommandResult[]
 	availableModes: ModeResult[]
+
+	// Task history (for resuming previous tasks)
+	taskHistory: TaskHistoryItem[]
 
 	// Current mode (updated reactively when mode changes)
 	currentMode: string | null
@@ -66,6 +76,9 @@ interface CLIActions {
 	setAllSlashCommands: (commands: SlashCommandResult[]) => void
 	setAvailableModes: (modes: ModeResult[]) => void
 
+	// Task history action
+	setTaskHistory: (history: TaskHistoryItem[]) => void
+
 	// Current mode action
 	setCurrentMode: (mode: string | null) => void
 
@@ -88,6 +101,7 @@ const initialState: CLIState = {
 	fileSearchResults: [],
 	allSlashCommands: [],
 	availableModes: [],
+	taskHistory: [],
 	currentMode: null,
 	tokenUsage: null,
 	routerModels: null,
@@ -149,6 +163,7 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	setFileSearchResults: (results) => set({ fileSearchResults: results }),
 	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
 	setAvailableModes: (modes) => set({ availableModes: modes }),
+	setTaskHistory: (history) => set({ taskHistory: history }),
 	setCurrentMode: (mode) => set({ currentMode: mode }),
 	setTokenUsage: (usage) => set({ tokenUsage: usage }),
 	setRouterModels: (models) => set({ routerModels: models }),

@@ -59,4 +59,8 @@ export {
 	type ModeTriggerConfig,
 	createHelpTrigger,
 	type HelpShortcutResult,
+	createHistoryTrigger,
+	toHistoryResult,
+	type HistoryResult,
+	type HistoryTriggerConfig,
 } from "./triggers/index.js"

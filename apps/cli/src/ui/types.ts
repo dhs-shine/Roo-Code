@@ -100,3 +100,27 @@ export interface ModeResult {
 	description?: string
 	icon?: string
 }
+
+/**
+ * Task history item for the CLI.
+ * Subset of HistoryItem from @roo-code/types with fields needed for display and resumption.
+ */
+export interface TaskHistoryItem {
+	/** Unique task ID */
+	id: string
+	/** Task prompt/description */
+	task: string
+	/** Timestamp when task was created */
+	ts: number
+	/** Total cost of the task */
+	totalCost?: number
+	/** Workspace path where task was run */
+	workspace?: string
+	/** Mode the task was run in */
+	mode?: string
+	/** Task status */
+	status?: "active" | "completed" | "delegated"
+	/** Tokens consumed */
+	tokensIn?: number
+	tokensOut?: number
+}

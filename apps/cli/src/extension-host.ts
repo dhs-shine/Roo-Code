@@ -24,8 +24,12 @@ import {
 	WebviewMessage,
 } from "@roo-code/types"
 import { createVSCodeAPI, setRuntimeConfigValues } from "@roo-code/vscode-shim"
-import { debugLog } from "@roo-code/core/debug-log"
+import { debugLog, DebugLogger } from "@roo-code/core/debug-log"
 import { FOLLOWUP_TIMEOUT_SECONDS } from "./constants.js"
+import { toolInspectorLog, clearToolInspectorLog } from "./utils/toolInspectorLogger.js"
+
+// Pre-configured logger for CLI message activity debugging
+const cliLogger = new DebugLogger("CLI")
 
 // Get the CLI package root directory (for finding node_modules/@vscode/ripgrep)
 // When bundled, import.meta.url points to dist/index.js, so go up to package root
@@ -273,6 +277,11 @@ export class ExtensionHost extends EventEmitter {
 		} catch (error) {
 			throw new Error(`Failed to activate extension: ${error instanceof Error ? error.message : String(error)}`)
 		}
+
+		// 8. Set up message listener to capture state updates (including mode changes)
+		// This needs to happen early so mode switches before a task runs are captured
+		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
+		this.on("extensionWebviewMessage", this.messageListener)
 	}
 
 	/**
@@ -334,8 +343,11 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	private applyRuntimeSettings(settings: RooCodeSettings): void {
-		if (this.options.mode) {
-			settings.mode = this.options.mode
+		// Use currentMode (updated by state messages from mode switches) if set,
+		// otherwise fall back to initial mode from CLI options
+		const activeMode = this.currentMode || this.options.mode
+		if (activeMode) {
+			settings.mode = activeMode
 		}
 
 		if (this.options.reasoningEffort) {
@@ -540,15 +552,26 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	async runTask(prompt: string): Promise<void> {
+		// Clear tool inspector log for fresh session (non-TUI mode)
+		clearToolInspectorLog()
+		toolInspectorLog("session:start:non-tui", {
+			timestamp: new Date().toISOString(),
+			mode: this.options.mode,
+			nonInteractive: this.options.nonInteractive,
+		})
+
+		cliLogger.debug("runTask:start", {
+			promptPreview: prompt?.substring(0, 100),
+			isWebviewReady: this.isWebviewReady,
+		})
+
 		if (!this.isWebviewReady) {
 			await new Promise<void>((resolve) => {
 				this.once("webviewReady", resolve)
 			})
 		}
 
-		// Should this only be done once?
-		this.messageListener = (message: ExtensionMessage) => this.handleExtensionMessage(message)
-		this.on("extensionWebviewMessage", this.messageListener)
+		// Message listener is now set up in activate() to capture mode changes before first task
 
 		const baseSettings: RooCodeSettings = {
 			commandExecutionTimeout: 30,
@@ -585,6 +608,13 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	private handleExtensionMessage(msg: ExtensionMessage): void {
+		// Log all incoming extension messages for debugging
+		cliLogger.debug("handleExtensionMessage", {
+			type: msg.type,
+			hasClineMessage: msg.clineMessage?.ts ? true : false,
+			hasState: msg.state ? true : false,
+		})
+
 		switch (msg.type) {
 			case "state":
 				this.handleStateMessage(msg)
@@ -649,10 +679,28 @@ export class ExtensionHost extends EventEmitter {
 			this.currentMode = newMode
 		}
 
-		// Why do we do this?
+		// Log state summary for debugging
 		const clineMessages = state.clineMessages
+		cliLogger.debug("handleStateMessage", {
+			mode: newMode,
+			messageCount: clineMessages?.length ?? 0,
+			pendingAsksCount: this.pendingAsks.size,
+			pendingAsks: Array.from(this.pendingAsks),
+			isWebviewReady: this.isWebviewReady,
+		})
 
 		if (clineMessages && clineMessages.length > 0) {
+			// Log summary of recent messages
+			const recentMessages = clineMessages.slice(-5).map((m) => ({
+				ts: m?.ts,
+				type: m?.type,
+				say: m?.say,
+				ask: m?.ask,
+				partial: m?.partial,
+				textPreview: m?.text?.substring(0, 100),
+			}))
+			cliLogger.debug("handleStateMessage:recentMessages", recentMessages)
+
 			for (const message of clineMessages) {
 				if (!message) {
 					continue
@@ -683,13 +731,30 @@ export class ExtensionHost extends EventEmitter {
 	 * This is where real-time streaming happens!
 	 */
 	private handleMessageUpdated({ clineMessage: msg }: ExtensionMessage): void {
-		// if (msg?.ask) {
-		// 	this.log(`[MSG] ts=${msg.ts}, ask=${msg.ask} -> ${msg.partial ? "partial" : msg.text}`)
-		// } else if (msg?.say) {
-		// 	this.log(`[MSG] ts=${msg.ts}, say=${msg.say} -> ${msg.partial ? "partial" : msg.text}`)
-		// } else if (msg) {
-		// 	this.log(`[MSG] ts=${msg.ts}, type=${msg.type}, text=${msg.text}`)
-		// }
+		// Log message updates for debugging stuck states
+		if (msg?.ask) {
+			cliLogger.debug("messageUpdated:ask", {
+				ts: msg.ts,
+				ask: msg.ask,
+				partial: msg.partial,
+				textPreview: msg.text?.substring(0, 100),
+				pendingAsksCount: this.pendingAsks.size,
+				hasPendingForTs: this.pendingAsks.has(msg.ts),
+			})
+		} else if (msg?.say) {
+			cliLogger.debug("messageUpdated:say", {
+				ts: msg.ts,
+				say: msg.say,
+				partial: msg.partial,
+				textPreview: msg.text?.substring(0, 100),
+			})
+		} else if (msg) {
+			cliLogger.debug("messageUpdated:other", {
+				ts: msg.ts,
+				type: msg.type,
+				textPreview: msg.text?.substring(0, 100),
+			})
+		}
 
 		if (msg?.type === "say" && msg.say && typeof msg.text === "string") {
 			this.handleSayMessage(msg.ts, msg.say, msg.text, msg.partial)
@@ -886,6 +951,12 @@ export class ExtensionHost extends EventEmitter {
 
 		// Check if we already handled this ask.
 		if (this.pendingAsks.has(ts)) {
+			cliLogger.debug("handleAskMessage:skipped", {
+				ts,
+				ask,
+				reason: "alreadyPending",
+				pendingAsksCount: this.pendingAsks.size,
+			})
 			return
 		}
 
@@ -895,8 +966,22 @@ export class ExtensionHost extends EventEmitter {
 		// If we don't check this first, the non-interactive handler would capture stdin input
 		// that's meant for the TUI (e.g., arrow keys show as "[B[B[B[B" escape codes).
 		if (this.options.disableOutput) {
+			cliLogger.debug("handleAskMessage:skipped", {
+				ts,
+				ask,
+				reason: "disableOutput (TUI mode)",
+			})
 			return
 		}
+
+		// Log that we're processing a new ask
+		cliLogger.debug("handleAskMessage:processing", {
+			ts,
+			ask,
+			textPreview: text?.substring(0, 100),
+			mode: this.options.nonInteractive ? "nonInteractive" : "interactive",
+			pendingAsksCount: this.pendingAsks.size,
+		})
 
 		// In non-interactive mode (without TUI), the extension's auto-approval settings handle
 		// most things, but followup questions need special handling with timeout.
@@ -924,6 +1009,12 @@ export class ExtensionHost extends EventEmitter {
 					// In non-interactive mode, still prompt the user but with a 10s timeout
 					// that auto-selects the first option if no input is received.
 					this.pendingAsks.add(ts)
+					cliLogger.debug("pendingAsks:added (nonInteractive)", {
+						ts,
+						ask: "followup",
+						pendingAsksCount: this.pendingAsks.size,
+						waitingForUserInput: true,
+					})
 					this.handleFollowupQuestionWithTimeout(ts, text)
 					this.displayedMessages.set(ts, { text, partial: false })
 				}
@@ -946,6 +1037,14 @@ export class ExtensionHost extends EventEmitter {
 					try {
 						toolInfo = JSON.parse(text)
 						toolName = toolInfo.tool || "unknown"
+
+						// Log tool payload for inspection (non-interactive plaintext mode)
+						toolInspectorLog("ask:tool:plaintext:nonInteractive", {
+							ts,
+							rawText: text,
+							parsedToolInfo: toolInfo,
+						})
+
 						this.output(`\n[tool] ${toolName}`)
 
 						// Display all tool parameters (excluding 'tool' which is the name).
@@ -1028,6 +1127,13 @@ export class ExtensionHost extends EventEmitter {
 	private handleAskMessageInteractive(ts: number, ask: string, text: string): void {
 		// Mark this ask as pending so we don't handle it again
 		this.pendingAsks.add(ts)
+		cliLogger.debug("pendingAsks:added", {
+			ts,
+			ask,
+			pendingAsksCount: this.pendingAsks.size,
+			allPendingAsks: Array.from(this.pendingAsks),
+			waitingForUserInput: true,
+		})
 
 		switch (ask) {
 			case "followup":
@@ -1344,6 +1450,13 @@ export class ExtensionHost extends EventEmitter {
 		try {
 			toolInfo = JSON.parse(text) as Record<string, unknown>
 			toolName = (toolInfo.tool as string) || "unknown"
+
+			// Log tool payload for inspection (interactive plaintext mode)
+			toolInspectorLog("ask:tool:plaintext:interactive", {
+				ts,
+				rawText: text,
+				parsedToolInfo: toolInfo,
+			})
 		} catch {
 			// Use raw text if not JSON.
 		}
@@ -1546,6 +1659,12 @@ export class ExtensionHost extends EventEmitter {
 			// Send approval response (only once per ts).
 			if (!this.pendingAsks.has(ts)) {
 				this.pendingAsks.add(ts)
+				cliLogger.debug("pendingAsks:added (command_output)", {
+					ts,
+					ask: "command_output",
+					pendingAsksCount: this.pendingAsks.size,
+					autoApproved: true,
+				})
 				this.sendApprovalResponse(true)
 			}
 		}
@@ -1610,6 +1729,10 @@ export class ExtensionHost extends EventEmitter {
 	 * Send a followup response (text answer) to the extension
 	 */
 	private sendFollowupResponse(text: string): void {
+		cliLogger.debug("sendFollowupResponse", {
+			textPreview: text?.substring(0, 100),
+			pendingAsksCount: this.pendingAsks.size,
+		})
 		this.sendToExtension({ type: "askResponse", askResponse: "messageResponse", text })
 	}
 
@@ -1617,6 +1740,10 @@ export class ExtensionHost extends EventEmitter {
 	 * Send an approval response (yes/no) to the extension
 	 */
 	private sendApprovalResponse(approved: boolean): void {
+		cliLogger.debug("sendApprovalResponse", {
+			approved,
+			pendingAsksCount: this.pendingAsks.size,
+		})
 		this.sendToExtension({
 			type: "askResponse",
 			askResponse: approved ? "yesButtonClicked" : "noButtonClicked",
@@ -1645,19 +1772,6 @@ export class ExtensionHost extends EventEmitter {
 
 			this.once("taskComplete", completeHandler)
 			this.once("taskError", errorHandler)
-
-			// Set a timeout (10 minutes by default).
-			const timeout = setTimeout(
-				() => {
-					cleanup()
-					reject(new Error("Task timed out"))
-				},
-				10 * 60 * 1000,
-			)
-
-			// Clear timeout on completion.
-			this.once("taskComplete", () => clearTimeout(timeout))
-			this.once("taskError", () => clearTimeout(timeout))
 		})
 	}
 
