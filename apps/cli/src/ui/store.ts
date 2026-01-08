@@ -6,6 +6,38 @@ import type { TUIMessage, PendingAsk, TaskHistoryItem } from "./types.js"
 import type { FileResult, SlashCommandResult, ModeResult } from "./components/autocomplete/index.js"
 
 /**
+ * Shallow array equality check - compares array length and element references.
+ * Used to prevent unnecessary state updates when array content hasn't changed.
+ */
+function shallowArrayEqual<T>(a: T[], b: T[]): boolean {
+	if (a === b) return true
+	if (a.length !== b.length) return false
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false
+	}
+	return true
+}
+
+/**
+ * Streaming message debounce configuration.
+ * Batches rapid partial message updates to reduce re-renders during streaming.
+ * Higher values = fewer renders but text appears more "chunky"
+ * Lower values = smoother text but more renders
+ */
+const STREAMING_DEBOUNCE_MS = 150 // 150ms debounce for aggressive batching
+
+// Pending streaming updates - batched and flushed after debounce interval
+interface PendingStreamUpdate {
+	id: string
+	content: string
+	partial: boolean
+	timestamp: number
+}
+
+const pendingStreamUpdates: Map<string, PendingStreamUpdate> = new Map()
+let streamingDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
  * RouterModels type for context window lookup.
  * Simplified version - we only need contextWindow from ModelInfo.
  */
@@ -120,24 +152,74 @@ const initialState: CLIState = {
 	previousTodos: [],
 }
 
-export const useCLIStore = create<CLIState & CLIActions>((set) => ({
+export const useCLIStore = create<CLIState & CLIActions>((set, get) => ({
 	...initialState,
 
-	addMessage: (msg) =>
-		set((state) => {
-			// Check if message already exists (by ID).
-			const existingIndex = state.messages.findIndex((m) => m.id === msg.id)
+	addMessage: (msg) => {
+		const state = get()
+		// Check if message already exists (by ID).
+		const existingIndex = state.messages.findIndex((m) => m.id === msg.id)
 
-			if (existingIndex !== -1) {
-				// Update existing message in place.
-				const updated = [...state.messages]
-				updated[existingIndex] = msg
-				return { messages: updated }
+		// For NEW messages (not updates) - always apply immediately
+		if (existingIndex === -1) {
+			set({ messages: [...state.messages, msg] })
+			return
+		}
+
+		// For UPDATES to existing messages:
+		// If partial (streaming) and message exists, debounce the update
+		if (msg.partial) {
+			// Queue the update
+			pendingStreamUpdates.set(msg.id, {
+				id: msg.id,
+				content: msg.content,
+				partial: true,
+				timestamp: Date.now(),
+			})
+
+			// Schedule flush if not already scheduled
+			if (!streamingDebounceTimer) {
+				streamingDebounceTimer = setTimeout(() => {
+					// Flush all pending updates as a single batch
+					const currentState = get()
+					const updates = Array.from(pendingStreamUpdates.values())
+					pendingStreamUpdates.clear()
+					streamingDebounceTimer = null
+
+					if (updates.length === 0) return
+
+					// Apply all pending updates in one state change
+					const newMessages = [...currentState.messages]
+					let hasChanges = false
+
+					for (const update of updates) {
+						const idx = newMessages.findIndex((m) => m.id === update.id)
+						if (idx !== -1 && newMessages[idx]) {
+							newMessages[idx] = {
+								...newMessages[idx],
+								content: update.content,
+								partial: update.partial,
+							}
+							hasChanges = true
+						}
+					}
+
+					if (hasChanges) {
+						set({ messages: newMessages })
+					}
+				}, STREAMING_DEBOUNCE_MS)
 			}
+			return
+		}
 
-			// Add new message.
-			return { messages: [...state.messages, msg] }
-		}),
+		// Non-partial update (final message) - apply immediately and clear any pending
+		// This ensures the final complete message is always shown
+		pendingStreamUpdates.delete(msg.id)
+
+		const updated = [...state.messages]
+		updated[existingIndex] = msg
+		set({ messages: updated })
+	},
 
 	updateMessage: (id, content, partial) =>
 		set((state) => {
@@ -195,10 +277,15 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 			apiConfiguration: state.apiConfiguration,
 		})),
 	setIsResumingTask: (isResuming) => set({ isResumingTask: isResuming }),
-	setFileSearchResults: (results) => set({ fileSearchResults: results }),
-	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
-	setAvailableModes: (modes) => set({ availableModes: modes }),
-	setTaskHistory: (history) => set({ taskHistory: history }),
+	// Use shallow equality to prevent unnecessary re-renders when array content is the same
+	setFileSearchResults: (results) =>
+		set((state) => (shallowArrayEqual(state.fileSearchResults, results) ? state : { fileSearchResults: results })),
+	setAllSlashCommands: (commands) =>
+		set((state) => (shallowArrayEqual(state.allSlashCommands, commands) ? state : { allSlashCommands: commands })),
+	setAvailableModes: (modes) =>
+		set((state) => (shallowArrayEqual(state.availableModes, modes) ? state : { availableModes: modes })),
+	setTaskHistory: (history) =>
+		set((state) => (shallowArrayEqual(state.taskHistory, history) ? state : { taskHistory: history })),
 	setCurrentTaskId: (taskId) => set({ currentTaskId: taskId }),
 	setCurrentMode: (mode) => set({ currentMode: mode }),
 	setTokenUsage: (usage) => set({ tokenUsage: usage }),

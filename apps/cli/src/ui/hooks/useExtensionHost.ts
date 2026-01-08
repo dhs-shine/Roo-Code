@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useCallback, useMemo } from "react"
 import { useApp } from "ink"
 import { randomUUID } from "crypto"
 import type { ExtensionMessage, WebviewMessage } from "@roo-code/types"
@@ -179,27 +179,28 @@ export function useExtensionHost({
 		}
 	}, []) // Run once on mount
 
-	// Expose sendToExtension method
-	const sendToExtension = hostRef.current
-		? (msg: WebviewMessage) => {
-				hostRef.current?.sendToExtension(msg)
-			}
-		: null
+	// Stable sendToExtension - uses ref to always access current host
+	// This function reference never changes, preventing downstream useCallback/useMemo invalidations
+	const sendToExtension = useCallback((msg: WebviewMessage) => {
+		hostRef.current?.sendToExtension(msg)
+	}, [])
 
-	// Expose runTask method
-	const runTask = hostRef.current
-		? (prompt: string) => {
-				if (!hostRef.current) {
-					return Promise.reject(new Error("Extension host not ready"))
-				}
-				return hostRef.current.runTask(prompt)
-			}
-		: null
+	// Stable runTask - uses ref to always access current host
+	const runTask = useCallback((prompt: string): Promise<void> => {
+		if (!hostRef.current) {
+			return Promise.reject(new Error("Extension host not ready"))
+		}
+		return hostRef.current.runTask(prompt)
+	}, [])
 
-	return {
-		isReady: isReadyRef.current,
-		sendToExtension,
-		runTask,
-		cleanup,
-	}
+	// Memoized return object to prevent unnecessary re-renders in consumers
+	return useMemo(
+		() => ({
+			isReady: isReadyRef.current,
+			sendToExtension,
+			runTask,
+			cleanup,
+		}),
+		[sendToExtension, runTask, cleanup],
+	)
 }

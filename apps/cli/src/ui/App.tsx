@@ -6,7 +6,6 @@ import type { WebviewMessage } from "@roo-code/types"
 import { getGlobalCommandsForAutocomplete } from "../utils/globalCommands.js"
 import { arePathsEqual } from "../utils/pathUtils.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
-
 import type { AppProps } from "./types.js"
 import * as theme from "./theme.js"
 
@@ -140,10 +139,9 @@ function AppInner({
 	} = useUIStateStore()
 
 	// Compute context window from router models and API configuration
-	const contextWindow = useMemo(
-		() => getContextWindow(routerModels, apiConfiguration),
-		[routerModels, apiConfiguration],
-	)
+	const contextWindow = useMemo(() => {
+		return getContextWindow(routerModels, apiConfiguration)
+	}, [routerModels, apiConfiguration])
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const autocompleteRef = useRef<AutocompleteInputHandle<any>>(null)
@@ -174,6 +172,10 @@ function AppInner({
 	const { rows } = useTerminalSize()
 	const [scrollState, setScrollState] = useState({ scrollTop: 0, maxScroll: 0, isAtBottom: true })
 	const { scrollToBottomTrigger, scrollToBottom } = useScrollToBottom()
+
+	// RAF-style throttle refs for scroll updates (prevents multiple state updates per event loop tick)
+	const rafIdRef = useRef<NodeJS.Immediate | null>(null)
+	const pendingScrollRef = useRef<{ scrollTop: number; maxScroll: number; isAtBottom: boolean } | null>(null)
 
 	// Toast notifications for ephemeral messages (e.g., mode changes)
 	const { currentToast, showInfo } = useToast()
@@ -275,9 +277,31 @@ function AppInner({
 		prevMessageCount.current = messages.length
 	}, [messages.length, scrollState.isAtBottom, scrollToBottom])
 
-	// Handle scroll state changes from ScrollArea
+	// Handle scroll state changes from ScrollArea (RAF-throttled to coalesce rapid updates)
 	const handleScroll = useCallback((scrollTop: number, maxScroll: number, isAtBottom: boolean) => {
-		setScrollState({ scrollTop, maxScroll, isAtBottom })
+		// Store the latest scroll values in ref
+		pendingScrollRef.current = { scrollTop, maxScroll, isAtBottom }
+
+		// Only schedule one update per event loop tick
+		if (rafIdRef.current === null) {
+			rafIdRef.current = setImmediate(() => {
+				rafIdRef.current = null
+				const pending = pendingScrollRef.current
+				if (pending) {
+					setScrollState(pending)
+					pendingScrollRef.current = null
+				}
+			})
+		}
+	}, [])
+
+	// Cleanup RAF-style timer on unmount
+	useEffect(() => {
+		return () => {
+			if (rafIdRef.current !== null) {
+				clearImmediate(rafIdRef.current)
+			}
+		}
 	}, [])
 
 	// File search handler for the file trigger
@@ -350,17 +374,15 @@ function AppInner({
 		if (fileSearchResults === prevFileSearchResultsRef.current) {
 			return
 		}
+
+		const currentPickerState = pickerStateRef.current
+		const willRefresh =
+			currentPickerState.isOpen && currentPickerState.activeTrigger?.id === "file" && fileSearchResults.length > 0
+
 		prevFileSearchResultsRef.current = fileSearchResults
 
-		// Read pickerState from ref to avoid dependency
-		const currentPickerState = pickerStateRef.current
-
 		// Only refresh when file picker is open and we have new results
-		if (
-			currentPickerState.isOpen &&
-			currentPickerState.activeTrigger?.id === "file" &&
-			fileSearchResults.length > 0
-		) {
+		if (willRefresh) {
 			autocompleteRef.current?.refreshSearch()
 			followupAutocompleteRef.current?.refreshSearch()
 		}
