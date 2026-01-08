@@ -12,19 +12,17 @@ export function ModeTool({ toolData }: ToolRendererProps) {
 	const isSwitch = toolData.tool.includes("switch") || toolData.tool.includes("Switch")
 
 	return (
-		<Box flexDirection="column" paddingX={1}>
-			{/* Header */}
-			<Box>
-				<Icon name={iconName} color={theme.toolHeader} />
-				{isSwitch && mode && (
-					<Box>
-						<Text color={theme.dimText}>Switching to</Text>
-						<Text color={theme.userHeader} bold>
-							{mode}
-						</Text>
-					</Box>
-				)}
-			</Box>
+		<Box flexDirection="row" gap={1} paddingX={1} marginBottom={1}>
+			<Icon name={iconName} color={theme.toolHeader} />
+			{isSwitch && mode && (
+				<Box gap={1}>
+					<Text color={theme.dimText}>Switching to</Text>
+					<Text color={theme.userHeader} bold>
+						{mode}
+					</Text>
+					<Text color={theme.dimText}>mode</Text>
+				</Box>
+			)}
 		</Box>
 	)
 }
