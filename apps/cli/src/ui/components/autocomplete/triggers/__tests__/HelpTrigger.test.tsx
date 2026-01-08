@@ -44,10 +44,11 @@ describe("HelpTrigger", () => {
 			const trigger = createHelpTrigger()
 
 			const results = trigger.search("") as HelpShortcutResult[]
-			expect(results.length).toBe(8)
+			expect(results.length).toBe(9)
 			expect(results.map((r) => r.shortcut)).toContain("/")
 			expect(results.map((r) => r.shortcut)).toContain("@")
 			expect(results.map((r) => r.shortcut)).toContain("!")
+			expect(results.map((r) => r.shortcut)).toContain("#")
 			expect(results.map((r) => r.shortcut)).toContain("shift + ⏎")
 			expect(results.map((r) => r.shortcut)).toContain("tab")
 			expect(results.map((r) => r.shortcut)).toContain("ctrl + m")

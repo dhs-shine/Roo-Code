@@ -20,6 +20,7 @@ const HELP_SHORTCUTS: HelpShortcutResult[] = [
 	{ key: "slash", shortcut: "/", description: "for commands" },
 	{ key: "at", shortcut: "@", description: "for file paths" },
 	{ key: "bang", shortcut: "!", description: "for modes" },
+	{ key: "hash", shortcut: "#", description: "for task history" },
 	{ key: "newline", shortcut: "shift + ⏎", description: "for newline" },
 	{ key: "focus", shortcut: "tab", description: "to toggle focus" },
 	{ key: "mode", shortcut: "ctrl + m", description: "to cycle modes" },
