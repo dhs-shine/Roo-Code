@@ -401,6 +401,30 @@ create_release() {
     step "8/8" "Creating GitHub release..."
     cd "$REPO_ROOT"
 
+    # Get the current commit SHA for the release target
+    COMMIT_SHA=$(git rev-parse HEAD)
+    
+    # Verify the commit exists on GitHub before attempting to create the release
+    # This prevents the "Release.target_commitish is invalid" error
+    info "Verifying commit ${COMMIT_SHA:0:8} exists on GitHub..."
+    git fetch origin 2>/dev/null || true
+    if ! git branch -r --contains "$COMMIT_SHA" 2>/dev/null | grep -q "origin/"; then
+        warn "Commit ${COMMIT_SHA:0:8} has not been pushed to GitHub"
+        echo ""
+        echo "The release script needs to create a release at your current commit,"
+        echo "but this commit hasn't been pushed to GitHub yet."
+        echo ""
+        read -p "Push current branch to origin now? [Y/n] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            info "Pushing to origin..."
+            git push origin HEAD || error "Failed to push to origin. Please push manually and try again."
+        else
+            error "Aborted. Please push your commits to GitHub and try again."
+        fi
+    fi
+    info "Commit verified on GitHub"
+
     # Build the What's New section from changelog content
     WHATS_NEW_SECTION=""
     if [ -n "$CHANGELOG_CONTENT" ]; then
@@ -456,8 +480,6 @@ $(cat "${TARBALL}.sha256" 2>/dev/null || echo "N/A")
 EOF
 )
 
-    # Get the current commit SHA for the release target
-    COMMIT_SHA=$(git rev-parse HEAD)
     info "Creating release at commit: ${COMMIT_SHA:0:8}"
     
     # Create release (gh will create the tag automatically)
