@@ -33,27 +33,27 @@ export type IconName =
  * Nerd Font glyphs are surrogate pairs (2 JS chars, 1 visual char).
  */
 const ICONS: Record<IconName, { nerd: string; fallback: string }> = {
-	folder: { nerd: "\udb80\ude4b", fallback: "▼" },
-	file: { nerd: "\udb80\ude14", fallback: "●" },
-	"file-edit": { nerd: "\uf040", fallback: "✎" },
-	check: { nerd: "\uf00c", fallback: "✓" },
-	cross: { nerd: "\uf00d", fallback: "✗" },
-	"arrow-right": { nerd: "\uf061", fallback: "→" },
-	bullet: { nerd: "\uf111", fallback: "•" },
-	spinner: { nerd: "\uf110", fallback: "*" },
+	folder: { nerd: "\uf413", fallback: "▼" },
+	file: { nerd: "\uf4a5", fallback: "●" },
+	"file-edit": { nerd: "\uf4d2", fallback: "✎" },
+	check: { nerd: "\uf42e", fallback: "✓" },
+	cross: { nerd: "\uf517", fallback: "✗" },
+	"arrow-right": { nerd: "\uf432", fallback: "→" },
+	bullet: { nerd: "\uf444", fallback: "•" },
+	spinner: { nerd: "\uf4e3", fallback: "*" },
 	// Tool-related icons
-	search: { nerd: "\uf002", fallback: "🔍" },
-	terminal: { nerd: "\uf120", fallback: "$" },
-	browser: { nerd: "\uf0ac", fallback: "🌐" },
-	switch: { nerd: "\uf074", fallback: "⇄" },
-	question: { nerd: "\uf128", fallback: "?" },
-	gear: { nerd: "\uf013", fallback: "⚙" },
-	diff: { nerd: "\uf46d", fallback: "±" },
+	search: { nerd: "\uf422", fallback: "🔍" },
+	terminal: { nerd: "\uf489", fallback: "$" },
+	browser: { nerd: "\uf488", fallback: "🌐" },
+	switch: { nerd: "\uf443", fallback: "⇄" },
+	question: { nerd: "\uf420", fallback: "?" },
+	gear: { nerd: "\uf423", fallback: "⚙" },
+	diff: { nerd: "\uf4d2", fallback: "±" },
 	// TODO-related icons
-	checkbox: { nerd: "\uf096", fallback: "○" }, // Empty checkbox
-	"checkbox-checked": { nerd: "\uf14a", fallback: "✓" }, // Checked checkbox
-	"checkbox-progress": { nerd: "\uf192", fallback: "→" }, // In progress (dot circle)
-	"todo-list": { nerd: "\uf0cb", fallback: "☑" }, // List icon for TODO header
+	checkbox: { nerd: "\uf4aa", fallback: "○" }, // Empty checkbox
+	"checkbox-checked": { nerd: "\uf4a4", fallback: "✓" }, // Checked checkbox
+	"checkbox-progress": { nerd: "\uf4aa", fallback: "→" }, // In progress (dot circle)
+	"todo-list": { nerd: "\uf45e", fallback: "☑" }, // List icon for TODO header
 }
 
 /**

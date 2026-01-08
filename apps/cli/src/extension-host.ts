@@ -26,7 +26,6 @@ import {
 import { createVSCodeAPI, setRuntimeConfigValues } from "@roo-code/vscode-shim"
 import { debugLog, DebugLogger } from "@roo-code/core/debug-log"
 import { FOLLOWUP_TIMEOUT_SECONDS } from "./constants.js"
-import { toolInspectorLog, clearToolInspectorLog } from "./utils/toolInspectorLogger.js"
 
 // Pre-configured logger for CLI message activity debugging
 const cliLogger = new DebugLogger("CLI")
@@ -111,6 +110,9 @@ export class ExtensionHost extends EventEmitter {
 
 	// Track ephemeral storage directory for cleanup
 	private ephemeralStorageDir: string | null = null
+
+	// Track which ts values have had their first partial logged (for first/last logging pattern)
+	private loggedFirstPartial: Set<number> = new Set()
 
 	constructor(options: ExtensionHostOptions) {
 		super()
@@ -552,18 +554,7 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	async runTask(prompt: string): Promise<void> {
-		// Clear tool inspector log for fresh session (non-TUI mode)
-		clearToolInspectorLog()
-		toolInspectorLog("session:start:non-tui", {
-			timestamp: new Date().toISOString(),
-			mode: this.options.mode,
-			nonInteractive: this.options.nonInteractive,
-		})
-
-		cliLogger.debug("runTask:start", {
-			promptPreview: prompt?.substring(0, 100),
-			isWebviewReady: this.isWebviewReady,
-		})
+		cliLogger.debug("runTask:start", { prompt: prompt?.substring(0, 100) })
 
 		if (!this.isWebviewReady) {
 			await new Promise<void>((resolve) => {
@@ -571,10 +562,12 @@ export class ExtensionHost extends EventEmitter {
 			})
 		}
 
-		// Message listener is now set up in activate() to capture mode changes before first task
+		// Message listener is now set up in activate() to capture mode changes
+		// before first task.
 
 		const baseSettings: RooCodeSettings = {
 			commandExecutionTimeout: 30,
+			browserToolEnabled: false,
 			enableCheckpoints: false, // Checkpoints disabled until CLI UI is implemented.
 			...this.buildApiConfiguration(),
 		}
@@ -586,7 +579,7 @@ export class ExtensionHost extends EventEmitter {
 					alwaysAllowReadOnlyOutsideWorkspace: true,
 					alwaysAllowWrite: true,
 					alwaysAllowWriteOutsideWorkspace: true,
-					alwaysAllowWriteProtected: false,
+					alwaysAllowWriteProtected: true,
 					alwaysAllowBrowser: true,
 					alwaysAllowMcp: true,
 					alwaysAllowModeSwitch: true,
@@ -608,13 +601,6 @@ export class ExtensionHost extends EventEmitter {
 	}
 
 	private handleExtensionMessage(msg: ExtensionMessage): void {
-		// Log all incoming extension messages for debugging
-		cliLogger.debug("handleExtensionMessage", {
-			type: msg.type,
-			hasClineMessage: msg.clineMessage?.ts ? true : false,
-			hasState: msg.state ? true : false,
-		})
-
 		switch (msg.type) {
 			case "state":
 				this.handleStateMessage(msg)
@@ -679,28 +665,9 @@ export class ExtensionHost extends EventEmitter {
 			this.currentMode = newMode
 		}
 
-		// Log state summary for debugging
 		const clineMessages = state.clineMessages
-		cliLogger.debug("handleStateMessage", {
-			mode: newMode,
-			messageCount: clineMessages?.length ?? 0,
-			pendingAsksCount: this.pendingAsks.size,
-			pendingAsks: Array.from(this.pendingAsks),
-			isWebviewReady: this.isWebviewReady,
-		})
 
 		if (clineMessages && clineMessages.length > 0) {
-			// Log summary of recent messages
-			const recentMessages = clineMessages.slice(-5).map((m) => ({
-				ts: m?.ts,
-				type: m?.type,
-				say: m?.say,
-				ask: m?.ask,
-				partial: m?.partial,
-				textPreview: m?.text?.substring(0, 100),
-			}))
-			cliLogger.debug("handleStateMessage:recentMessages", recentMessages)
-
 			for (const message of clineMessages) {
 				if (!message) {
 					continue
@@ -731,32 +698,22 @@ export class ExtensionHost extends EventEmitter {
 	 * This is where real-time streaming happens!
 	 */
 	private handleMessageUpdated({ clineMessage: msg }: ExtensionMessage): void {
-		// Log message updates for debugging stuck states
-		if (msg?.ask) {
-			cliLogger.debug("messageUpdated:ask", {
-				ts: msg.ts,
-				ask: msg.ask,
-				partial: msg.partial,
-				textPreview: msg.text?.substring(0, 100),
-				pendingAsksCount: this.pendingAsks.size,
-				hasPendingForTs: this.pendingAsks.has(msg.ts),
-			})
-		} else if (msg?.say) {
-			cliLogger.debug("messageUpdated:say", {
-				ts: msg.ts,
-				say: msg.say,
-				partial: msg.partial,
-				textPreview: msg.text?.substring(0, 100),
-			})
-		} else if (msg) {
-			cliLogger.debug("messageUpdated:other", {
-				ts: msg.ts,
-				type: msg.type,
-				textPreview: msg.text?.substring(0, 100),
-			})
+		if (!msg) {
+			return
 		}
 
-		if (msg?.type === "say" && msg.say && typeof msg.text === "string") {
+		// Log first partial and final complete messages only (reduces noise)
+		if (msg.partial) {
+			if (!this.loggedFirstPartial.has(msg.ts)) {
+				this.loggedFirstPartial.add(msg.ts)
+				cliLogger.debug("message:start", { ts: msg.ts, type: msg.say || msg.ask })
+			}
+		} else {
+			cliLogger.debug("message:complete", { ts: msg.ts, type: msg.say || msg.ask })
+			this.loggedFirstPartial.delete(msg.ts)
+		}
+
+		if (msg.type === "say" && msg.say && typeof msg.text === "string") {
 			this.handleSayMessage(msg.ts, msg.say, msg.text, msg.partial)
 		} else if (msg?.type === "ask" && msg.ask && typeof msg.text === "string") {
 			this.handleAskMessage(msg.ts, msg.ask, msg.text, msg.partial)
@@ -951,12 +908,6 @@ export class ExtensionHost extends EventEmitter {
 
 		// Check if we already handled this ask.
 		if (this.pendingAsks.has(ts)) {
-			cliLogger.debug("handleAskMessage:skipped", {
-				ts,
-				ask,
-				reason: "alreadyPending",
-				pendingAsksCount: this.pendingAsks.size,
-			})
 			return
 		}
 
@@ -966,22 +917,8 @@ export class ExtensionHost extends EventEmitter {
 		// If we don't check this first, the non-interactive handler would capture stdin input
 		// that's meant for the TUI (e.g., arrow keys show as "[B[B[B[B" escape codes).
 		if (this.options.disableOutput) {
-			cliLogger.debug("handleAskMessage:skipped", {
-				ts,
-				ask,
-				reason: "disableOutput (TUI mode)",
-			})
 			return
 		}
-
-		// Log that we're processing a new ask
-		cliLogger.debug("handleAskMessage:processing", {
-			ts,
-			ask,
-			textPreview: text?.substring(0, 100),
-			mode: this.options.nonInteractive ? "nonInteractive" : "interactive",
-			pendingAsksCount: this.pendingAsks.size,
-		})
 
 		// In non-interactive mode (without TUI), the extension's auto-approval settings handle
 		// most things, but followup questions need special handling with timeout.
@@ -1006,15 +943,8 @@ export class ExtensionHost extends EventEmitter {
 		switch (ask) {
 			case "followup":
 				if (!alreadyDisplayed) {
-					// In non-interactive mode, still prompt the user but with a 10s timeout
-					// that auto-selects the first option if no input is received.
+					// In non-interactive mode, still prompt the user.
 					this.pendingAsks.add(ts)
-					cliLogger.debug("pendingAsks:added (nonInteractive)", {
-						ts,
-						ask: "followup",
-						pendingAsksCount: this.pendingAsks.size,
-						waitingForUserInput: true,
-					})
 					this.handleFollowupQuestionWithTimeout(ts, text)
 					this.displayedMessages.set(ts, { text, partial: false })
 				}
@@ -1030,47 +960,14 @@ export class ExtensionHost extends EventEmitter {
 			// Note: command_output is handled separately in handleCommandOutputAsk.
 
 			case "tool":
-				if (!alreadyDisplayed && text) {
-					let toolInfo
-					let toolName
-
-					try {
-						toolInfo = JSON.parse(text)
-						toolName = toolInfo.tool || "unknown"
-
-						// Log tool payload for inspection (non-interactive plaintext mode)
-						toolInspectorLog("ask:tool:plaintext:nonInteractive", {
-							ts,
-							rawText: text,
-							parsedToolInfo: toolInfo,
-						})
-
-						this.output(`\n[tool] ${toolName}`)
-
-						// Display all tool parameters (excluding 'tool' which is the name).
-						for (const [key, value] of Object.entries(toolInfo)) {
-							if (key === "tool") {
-								continue
-							}
-
-							// Format the value - truncate long strings
-							let displayValue: string
-
-							if (typeof value === "string") {
-								displayValue = value.length > 200 ? value.substring(0, 200) + "..." : value
-							} else if (typeof value === "object" && value !== null) {
-								const json = JSON.stringify(value)
-								displayValue = json.length > 200 ? json.substring(0, 200) + "..." : json
-							} else {
-								displayValue = String(value)
-							}
-
-							this.output(`  ${key}: ${displayValue}`)
-						}
-					} catch {
-						this.output("\n[tool]", text)
-					}
-
+				// In non-interactive mode, tool approval still requires user interaction
+				// when auto-approval settings don't allow it (e.g., protected files).
+				// The auto-approval logic in checkAutoApproval() decides whether to approve/deny/ask.
+				// When it returns "ask", we need to prompt the user even in non-interactive mode.
+				// So we handle tool approvals the same way as interactive mode.
+				if (!alreadyDisplayed) {
+					this.pendingAsks.add(ts)
+					this.handleToolApproval(ts, text)
 					this.displayedMessages.set(ts, { text, partial: false })
 				}
 				break
@@ -1110,10 +1007,18 @@ export class ExtensionHost extends EventEmitter {
 				break
 
 			case "completion_result":
-				// Task completion - no action needed
 				break
 
 			default:
+				// DIAGNOSTIC LOG: Capture unknown ask types in non-interactive mode
+				debugLog("[DIAGNOSTIC] Unknown ask type (non-interactive)", {
+					ask,
+					ts,
+					textPreview: text?.substring(0, 200),
+					fullText: text,
+					timestamp: new Date().toISOString(),
+				})
+
 				if (!alreadyDisplayed && text) {
 					this.output(`\n[${ask}]`, text)
 					this.displayedMessages.set(ts, { text, partial: false })
@@ -1127,13 +1032,6 @@ export class ExtensionHost extends EventEmitter {
 	private handleAskMessageInteractive(ts: number, ask: string, text: string): void {
 		// Mark this ask as pending so we don't handle it again
 		this.pendingAsks.add(ts)
-		cliLogger.debug("pendingAsks:added", {
-			ts,
-			ask,
-			pendingAsksCount: this.pendingAsks.size,
-			allPendingAsks: Array.from(this.pendingAsks),
-			waitingForUserInput: true,
-		})
 
 		switch (ask) {
 			case "followup":
@@ -1168,12 +1066,21 @@ export class ExtensionHost extends EventEmitter {
 				break
 
 			case "completion_result":
-				// Task completion - handled by say message, no response needed
+				// Task completion - handled by say message, no response needed.
 				this.pendingAsks.delete(ts)
 				break
 
 			default:
-				// Unknown ask type - try to handle as yes/no
+				// DIAGNOSTIC LOG: Capture unknown ask types in interactive mode
+				debugLog("[DIAGNOSTIC] Unknown ask type (interactive)", {
+					ask,
+					ts,
+					textPreview: text?.substring(0, 200),
+					fullText: text,
+					timestamp: new Date().toISOString(),
+				})
+
+				// Unknown ask type - try to handle as yes/no.
 				this.handleGenericApproval(ts, ask, text)
 		}
 	}
@@ -1450,22 +1357,25 @@ export class ExtensionHost extends EventEmitter {
 		try {
 			toolInfo = JSON.parse(text) as Record<string, unknown>
 			toolName = (toolInfo.tool as string) || "unknown"
-
-			// Log tool payload for inspection (interactive plaintext mode)
-			toolInspectorLog("ask:tool:plaintext:interactive", {
-				ts,
-				rawText: text,
-				parsedToolInfo: toolInfo,
-			})
 		} catch {
 			// Use raw text if not JSON.
 		}
 
-		this.output(`\n[Tool Request] ${toolName}`)
+		// Check if this is a protected file operation
+		const isProtected = toolInfo.isProtected === true
 
-		// Display all tool parameters (excluding 'tool' which is the name)
+		// Display tool name with protected file indicator
+		if (isProtected) {
+			this.output(`\n[Tool Request] ${toolName} [PROTECTED CONFIGURATION FILE]`)
+			this.output(`⚠️  WARNING: This tool wants to modify a protected configuration file.`)
+			this.output(`    Protected files include .rooignore, .roo/*, and other sensitive config files.`)
+		} else {
+			this.output(`\n[Tool Request] ${toolName}`)
+		}
+
+		// Display all tool parameters (excluding 'tool' and 'isProtected' which are metadata)
 		for (const [key, value] of Object.entries(toolInfo)) {
-			if (key === "tool") {
+			if (key === "tool" || key === "isProtected") {
 				continue
 			}
 
@@ -1659,12 +1569,6 @@ export class ExtensionHost extends EventEmitter {
 			// Send approval response (only once per ts).
 			if (!this.pendingAsks.has(ts)) {
 				this.pendingAsks.add(ts)
-				cliLogger.debug("pendingAsks:added (command_output)", {
-					ts,
-					ask: "command_output",
-					pendingAsksCount: this.pendingAsks.size,
-					autoApproved: true,
-				})
 				this.sendApprovalResponse(true)
 			}
 		}
@@ -1729,10 +1633,6 @@ export class ExtensionHost extends EventEmitter {
 	 * Send a followup response (text answer) to the extension
 	 */
 	private sendFollowupResponse(text: string): void {
-		cliLogger.debug("sendFollowupResponse", {
-			textPreview: text?.substring(0, 100),
-			pendingAsksCount: this.pendingAsks.size,
-		})
 		this.sendToExtension({ type: "askResponse", askResponse: "messageResponse", text })
 	}
 
@@ -1740,10 +1640,6 @@ export class ExtensionHost extends EventEmitter {
 	 * Send an approval response (yes/no) to the extension
 	 */
 	private sendApprovalResponse(approved: boolean): void {
-		cliLogger.debug("sendApprovalResponse", {
-			approved,
-			pendingAsksCount: this.pendingAsks.size,
-		})
 		this.sendToExtension({
 			type: "askResponse",
 			askResponse: approved ? "yesButtonClicked" : "noButtonClicked",
