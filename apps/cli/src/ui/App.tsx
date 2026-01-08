@@ -16,6 +16,7 @@ import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
 import ToastDisplay from "./components/ToastDisplay.js"
+import TodoDisplay from "./components/TodoDisplay.js"
 import { useToast } from "./hooks/useToast.js"
 import {
 	AutocompleteInput,
@@ -54,6 +55,7 @@ import type {
 	SlashCommandResult,
 	ModeResult,
 	TaskHistoryItem,
+	ToolData,
 } from "./types.js"
 import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
 
@@ -243,6 +245,9 @@ function AppInner({
 	const seenMessageIds = useRef<Set<string>>(new Set())
 	const firstTextMessageSkipped = useRef(false)
 
+	// Track pending command for injecting into command_output toolData
+	const pendingCommandRef = useRef<string | null>(null)
+
 	// Track Ctrl+C presses for "press again to exit" behavior
 	const [showExitHint, setShowExitHint] = useState(false)
 	const exitHintTimeout = useRef<NodeJS.Timeout | null>(null)
@@ -259,6 +264,9 @@ function AppInner({
 
 	// Manual focus override: 'scroll' | 'input' | null (null = auto-determine)
 	const [manualFocus, setManualFocus] = useState<"scroll" | "input" | null>(null)
+
+	// State for TODO list viewer (shown via Ctrl+T shortcut)
+	const [showTodoViewer, setShowTodoViewer] = useState(false)
 
 	// Autocomplete picker state (received from AutocompleteInput via callback)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -430,7 +438,32 @@ function AppInner({
 			return
 		}
 
+		// Ctrl+T to toggle TODO list viewer
+		if (matchesGlobalSequence(input, key, "ctrl-t")) {
+			// Close picker if open
+			if (pickerState.isOpen) {
+				autocompleteRef.current?.closePicker()
+				followupAutocompleteRef.current?.closePicker()
+			}
+			// Toggle TODO viewer
+			setShowTodoViewer((prev) => {
+				const newValue = !prev
+				if (newValue && currentTodos.length === 0) {
+					showInfo("No TODO list available", 2000)
+					return false
+				}
+				return newValue
+			})
+			return
+		}
+
 		// Escape key to cancel/pause task when loading (streaming)
+		// Escape key to close TODO viewer
+		if (key.escape && showTodoViewer) {
+			setShowTodoViewer(false)
+			return
+		}
+
 		if (key.escape && isLoading && hostRef.current) {
 			// If picker is open, let the picker handle escape first
 			if (pickerState.isOpen) {
@@ -599,12 +632,23 @@ function AppInner({
 			let toolName: string | undefined
 			let toolDisplayName: string | undefined
 			let toolDisplayOutput: string | undefined
+			let toolData: ToolData | undefined
 
 			if (say === "command_output") {
 				role = "tool"
 				toolName = "execute_command"
 				toolDisplayName = "bash"
 				toolDisplayOutput = text
+				// Create toolData for command output, including the pending command if available
+				const trackedCommand = pendingCommandRef.current
+				toolInspectorLog("say:command_output", { ts, trackedCommand, outputLength: text?.length })
+				toolData = {
+					tool: "execute_command",
+					command: trackedCommand || undefined,
+					output: text,
+				}
+				// Clear the pending command after using it
+				pendingCommandRef.current = null
 			} else if (say === "tool") {
 				role = "tool"
 				try {
@@ -621,6 +665,8 @@ function AppInner({
 					toolName = toolInfo.tool
 					toolDisplayName = toolInfo.tool
 					toolDisplayOutput = formatToolOutput(toolInfo)
+					// Extract structured toolData for rich rendering
+					toolData = extractToolData(toolInfo)
 
 					// Special handling for update_todo_list tool
 					if (toolName === "update_todo_list" || toolName === "updateTodoList") {
@@ -643,6 +689,7 @@ function AppInner({
 								originalType: say,
 								todos,
 								previousTodos: prevTodos,
+								toolData,
 							})
 							return
 						}
@@ -665,6 +712,7 @@ function AppInner({
 				toolDisplayOutput,
 				partial,
 				originalType: say,
+				toolData,
 			})
 		},
 		[addMessage, verbose, currentTodos, setTodos],
@@ -707,7 +755,50 @@ function AppInner({
 				seenMessageIds.current.add(messageId)
 				setComplete(true)
 				setLoading(false)
+
+				// Parse the completion result and add a message for CompletionTool to render
+				try {
+					const completionInfo = JSON.parse(text) as Record<string, unknown>
+					const toolData: ToolData = {
+						tool: "attempt_completion",
+						result: completionInfo.result as string | undefined,
+						content: completionInfo.result as string | undefined,
+					}
+
+					addMessage({
+						id: messageId,
+						role: "tool",
+						content: text,
+						toolName: "attempt_completion",
+						toolDisplayName: "Task Complete",
+						toolDisplayOutput: formatToolOutput({ tool: "attempt_completion", ...completionInfo }),
+						originalType: ask,
+						toolData,
+					})
+				} catch {
+					// If parsing fails, still add a basic completion message
+					addMessage({
+						id: messageId,
+						role: "tool",
+						content: text || "Task completed",
+						toolName: "attempt_completion",
+						toolDisplayName: "Task Complete",
+						toolDisplayOutput: "✅ Task completed",
+						originalType: ask,
+						toolData: {
+							tool: "attempt_completion",
+							content: text,
+						},
+					})
+				}
 				return
+			}
+
+			// Track pending command BEFORE nonInteractive handling
+			// This ensures we capture the command text for later injection into command_output toolData
+			if (ask === "command") {
+				toolInspectorLog("ask:command:tracking", { ts, text })
+				pendingCommandRef.current = text
 			}
 
 			if (nonInteractive && ask !== "followup") {
@@ -718,6 +809,9 @@ function AppInner({
 					let toolDisplayName: string | undefined
 					let toolDisplayOutput: string | undefined
 					let formattedContent = text || ""
+					let toolData: ToolData | undefined
+					let todos: TodoItem[] | undefined
+					let previousTodos: TodoItem[] | undefined
 
 					try {
 						const toolInfo = JSON.parse(text) as Record<string, unknown>
@@ -734,6 +828,19 @@ function AppInner({
 						toolDisplayName = toolInfo.tool as string
 						toolDisplayOutput = formatToolOutput(toolInfo)
 						formattedContent = formatToolAskMessage(toolInfo)
+						// Extract structured toolData for rich rendering
+						toolData = extractToolData(toolInfo)
+
+						// Special handling for update_todo_list tool - extract todos
+						if (toolName === "update_todo_list" || toolName === "updateTodoList") {
+							const parsedTodos = parseTodosFromToolInfo(toolInfo)
+							if (parsedTodos && parsedTodos.length > 0) {
+								todos = parsedTodos
+								// Capture previous todos before updating global state
+								previousTodos = [...currentTodos]
+								setTodos(parsedTodos)
+							}
+						}
 					} catch {
 						// Use raw text if not valid JSON
 					}
@@ -746,6 +853,9 @@ function AppInner({
 						toolDisplayName,
 						toolDisplayOutput,
 						originalType: ask,
+						toolData,
+						todos,
+						previousTodos,
 					})
 				} else {
 					addMessage({
@@ -786,6 +896,7 @@ function AppInner({
 					// Use raw text if not valid JSON
 				}
 			}
+			// Note: ask === "command" is handled above before the nonInteractive block
 
 			seenMessageIds.current.add(messageId)
 
@@ -796,7 +907,7 @@ function AppInner({
 				suggestions,
 			})
 		},
-		[addMessage, setPendingAsk, setComplete, setLoading, nonInteractive],
+		[addMessage, setPendingAsk, setComplete, setLoading, nonInteractive, currentTodos, setTodos],
 	)
 
 	// Handle extension messages
@@ -1282,7 +1393,7 @@ function AppInner({
 	) : isScrollAreaActive ? (
 		<ScrollIndicator scrollTop={scrollState.scrollTop} maxScroll={scrollState.maxScroll} isScrollFocused={true} />
 	) : isInputAreaActive ? (
-		<Text color={theme.dimText}>? for shortcuts • Ctrl+M mode</Text>
+		<Text color={theme.dimText}>? for shortcuts</Text>
 	) : null
 
 	// Get render function for picker items based on active trigger
@@ -1428,7 +1539,14 @@ function AppInner({
 							prompt="› "
 						/>
 						<HorizontalLine active={isInputAreaActive} />
-						{pickerState.isOpen ? (
+						{showTodoViewer ? (
+							<Box flexDirection="column" height={PICKER_HEIGHT}>
+								<TodoDisplay todos={currentTodos} showProgress={true} title="TODO List" />
+								<Box height={1}>
+									<Text color={theme.dimText}>Ctrl+T to close</Text>
+								</Box>
+							</Box>
+						) : pickerState.isOpen ? (
 							<Box flexDirection="column" height={PICKER_HEIGHT}>
 								<PickerSelect
 									results={pickerState.results}
@@ -1462,6 +1580,114 @@ export function App(props: TUIAppProps) {
 			<AppInner {...props} />
 		</TerminalSizeProvider>
 	)
+}
+
+/**
+ * Extract structured ToolData from parsed tool JSON
+ * This provides rich data for tool-specific renderers
+ */
+function extractToolData(toolInfo: Record<string, unknown>): ToolData {
+	const toolName = (toolInfo.tool as string) || "unknown"
+
+	// Base tool data with common fields
+	const toolData: ToolData = {
+		tool: toolName,
+		path: toolInfo.path as string | undefined,
+		isOutsideWorkspace: toolInfo.isOutsideWorkspace as boolean | undefined,
+		isProtected: toolInfo.isProtected as boolean | undefined,
+		content: toolInfo.content as string | undefined,
+		reason: toolInfo.reason as string | undefined,
+	}
+
+	// Extract diff-related fields
+	if (toolInfo.diff !== undefined) {
+		toolData.diff = toolInfo.diff as string
+	}
+	if (toolInfo.diffStats !== undefined) {
+		const stats = toolInfo.diffStats as { added?: number; removed?: number }
+		if (typeof stats.added === "number" && typeof stats.removed === "number") {
+			toolData.diffStats = { added: stats.added, removed: stats.removed }
+		}
+	}
+
+	// Extract search-related fields
+	if (toolInfo.regex !== undefined) {
+		toolData.regex = toolInfo.regex as string
+	}
+	if (toolInfo.filePattern !== undefined) {
+		toolData.filePattern = toolInfo.filePattern as string
+	}
+	if (toolInfo.query !== undefined) {
+		toolData.query = toolInfo.query as string
+	}
+
+	// Extract mode-related fields
+	if (toolInfo.mode !== undefined) {
+		toolData.mode = toolInfo.mode as string
+	}
+	if (toolInfo.mode_slug !== undefined) {
+		toolData.mode = toolInfo.mode_slug as string
+	}
+
+	// Extract command-related fields
+	if (toolInfo.command !== undefined) {
+		toolData.command = toolInfo.command as string
+	}
+	if (toolInfo.output !== undefined) {
+		toolData.output = toolInfo.output as string
+	}
+
+	// Extract browser-related fields
+	if (toolInfo.action !== undefined) {
+		toolData.action = toolInfo.action as string
+	}
+	if (toolInfo.url !== undefined) {
+		toolData.url = toolInfo.url as string
+	}
+	if (toolInfo.coordinate !== undefined) {
+		toolData.coordinate = toolInfo.coordinate as string
+	}
+
+	// Extract batch file operations
+	if (Array.isArray(toolInfo.files)) {
+		toolData.batchFiles = (toolInfo.files as Array<Record<string, unknown>>).map((f) => ({
+			path: (f.path as string) || "",
+			lineSnippet: f.lineSnippet as string | undefined,
+			isOutsideWorkspace: f.isOutsideWorkspace as boolean | undefined,
+			key: f.key as string | undefined,
+			content: f.content as string | undefined,
+		}))
+	}
+
+	// Extract batch diff operations
+	if (Array.isArray(toolInfo.batchDiffs)) {
+		toolData.batchDiffs = (toolInfo.batchDiffs as Array<Record<string, unknown>>).map((d) => ({
+			path: (d.path as string) || "",
+			changeCount: d.changeCount as number | undefined,
+			key: d.key as string | undefined,
+			content: d.content as string | undefined,
+			diffStats: d.diffStats as { added: number; removed: number } | undefined,
+			diffs: d.diffs as Array<{ content: string; startLine?: number }> | undefined,
+		}))
+	}
+
+	// Extract question/completion fields
+	if (toolInfo.question !== undefined) {
+		toolData.question = toolInfo.question as string
+	}
+	if (toolInfo.result !== undefined) {
+		toolData.result = toolInfo.result as string
+	}
+
+	// Extract additional display hints
+	if (toolInfo.lineNumber !== undefined) {
+		toolData.lineNumber = toolInfo.lineNumber as number
+	}
+	if (toolInfo.additionalFileCount !== undefined) {
+		toolData.additionalFileCount = toolInfo.additionalFileCount as number
+	}
+
+	return toolData
 }
 
 /**

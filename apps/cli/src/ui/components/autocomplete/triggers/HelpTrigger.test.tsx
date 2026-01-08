@@ -45,13 +45,36 @@ describe("HelpTrigger", () => {
 			const trigger = createHelpTrigger()
 
 			const results = trigger.search("") as HelpShortcutResult[]
-			expect(results.length).toBe(6)
+			expect(results.length).toBe(8)
 			expect(results.map((r) => r.shortcut)).toContain("/")
 			expect(results.map((r) => r.shortcut)).toContain("@")
 			expect(results.map((r) => r.shortcut)).toContain("!")
 			expect(results.map((r) => r.shortcut)).toContain("shift + ⏎")
 			expect(results.map((r) => r.shortcut)).toContain("tab")
+			expect(results.map((r) => r.shortcut)).toContain("ctrl + m")
 			expect(results.map((r) => r.shortcut)).toContain("ctrl + c")
+			expect(results.map((r) => r.shortcut)).toContain("ctrl + t")
+		})
+
+		it("should include ctrl+t shortcut for TODO list", () => {
+			const trigger = createHelpTrigger()
+
+			const results = trigger.search("todo") as HelpShortcutResult[]
+			expect(results.length).toBe(1)
+			expect(results[0]?.shortcut).toBe("ctrl + t")
+			expect(results[0]?.description).toContain("TODO")
+		})
+
+		it("should clear input for todos action shortcut", () => {
+			const trigger = createHelpTrigger()
+
+			const todosItem: HelpShortcutResult = {
+				key: "todos",
+				shortcut: "ctrl + t",
+				description: "to view TODO list",
+			}
+			const replacement = trigger.getReplacementText(todosItem, "?todo", 0)
+			expect(replacement).toBe("")
 		})
 
 		it("should filter shortcuts by shortcut character", () => {

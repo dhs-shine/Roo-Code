@@ -51,15 +51,14 @@ function Header({ model, cwd, mode, reasoningEffort, version, tokenUsage, contex
 						<Text color={theme.dimText}>Mode: {mode}</Text>
 						<Text color={theme.dimText}>Model: {model}</Text>
 						<Text color={theme.dimText}>Reasoning: {reasoningEffort}</Text>
-						{showMetrics && (
-							<Box marginTop={1}>
-								<MetricsDisplay tokenUsage={tokenUsage} contextWindow={contextWindow} />
-							</Box>
-						)}
 					</Box>
 				</Box>
 			</Box>
-			{/* Inline horizontal line using the same columns value */}
+			{showMetrics && (
+				<Box alignSelf="flex-end" marginTop={-1}>
+					<MetricsDisplay tokenUsage={tokenUsage} contextWindow={contextWindow} />
+				</Box>
+			)}
 			<Text color={theme.borderColor}>{"─".repeat(columns)}</Text>
 		</Box>
 	)

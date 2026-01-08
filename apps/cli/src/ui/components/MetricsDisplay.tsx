@@ -42,7 +42,7 @@ function formatCost(cost: number): string {
 
 /**
  * Displays task metrics in a compact format:
- * $0.12 │ ↓45.2K │ ↑8.7K │ Context: [████████░░░░] 62%
+ * $0.12 │ ↓45.2K │ ↑8.7K │ [████████░░░░] 62%
  */
 function MetricsDisplay({ tokenUsage, contextWindow }: MetricsDisplayProps) {
 	const { totalCost, totalTokensIn, totalTokensOut, contextTokens } = tokenUsage
@@ -59,7 +59,6 @@ function MetricsDisplay({ tokenUsage, contextWindow }: MetricsDisplayProps) {
 				↑ <Text color={theme.text}>{formatNumber(totalTokensOut)}</Text>
 			</Text>
 			<Text color={theme.dimText}> • </Text>
-			<Text color={theme.dimText}>Context: </Text>
 			<ProgressBar value={contextTokens} max={contextWindow} width={12} />
 		</Box>
 	)

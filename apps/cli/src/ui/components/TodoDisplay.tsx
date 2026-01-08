@@ -5,15 +5,16 @@ import type { TodoItem } from "@roo-code/types"
 
 import * as theme from "../utils/theme.js"
 import ProgressBar from "./ProgressBar.js"
+import { Icon, type IconName } from "./Icon.js"
 
 /**
- * Status icons for TODO items using Unicode characters
+ * Map TODO status to Icon names
  */
-const STATUS_ICONS = {
-	completed: "✓",
-	in_progress: "→",
-	pending: "○",
-} as const
+const STATUS_ICON_NAMES: Record<TodoItem["status"], IconName> = {
+	completed: "checkbox-checked",
+	in_progress: "checkbox-progress",
+	pending: "checkbox",
+}
 
 /**
  * Get the color for a TODO status
@@ -39,7 +40,7 @@ interface TodoDisplayProps {
 	showProgress?: boolean
 	/** Whether to show only changed items (default: false) */
 	showChangesOnly?: boolean
-	/** Title to display in the header (default: "TODO List Updated") */
+	/** Title to display in the header (default: "Progress") */
 	title?: string
 }
 
@@ -47,21 +48,20 @@ interface TodoDisplayProps {
  * TodoDisplay component for CLI
  *
  * Renders a beautiful TODO list visualization with:
- * - Status icons (✓ completed, → in progress, ○ pending)
- * - Color-coded items based on status
+ * - Nerd Font icons (or ASCII fallbacks) for status
+ * - Color-coded items based on status (green/yellow/gray)
  * - Progress bar showing completion percentage
  * - Optional diff mode showing only changed items
+ * - Change indicators ([done], [started], [new])
  *
- * Visual example:
+ * Visual example (with fallback icons):
  * ```
- * ┌─ TODO List Updated ──────────────────────────────┐
- * │  ✓ Analyze requirements                          │
- * │  ✓ Design architecture                           │
- * │  → Implement core logic                          │
- * │  ○ Write tests                                   │
- * │  ○ Update documentation                          │
- * │  [████████░░░░░░░░] 2/5 completed                │
- * └──────────────────────────────────────────────────┘
+ *  ☑ Progress [████████░░░░░░░░] 2/5
+ *    ✓ Analyze requirements [done]
+ *    ✓ Design architecture [done]
+ *    → Implement core logic
+ *    ○ Write tests
+ *    ○ Update documentation [new]
  * ```
  */
 function TodoDisplay({
@@ -69,7 +69,7 @@ function TodoDisplay({
 	previousTodos = [],
 	showProgress = true,
 	showChangesOnly = false,
-	title = "TODO List Updated",
+	title = "Progress",
 }: TodoDisplayProps) {
 	if (!todos || todos.length === 0) {
 		return null
@@ -101,26 +101,28 @@ function TodoDisplay({
 	// Calculate progress statistics
 	const totalCount = todos.length
 	const completedCount = todos.filter((t) => t.status === "completed").length
-	const inProgressCount = todos.filter((t) => t.status === "in_progress").length
 
 	return (
-		<Box flexDirection="column" paddingX={1}>
-			{/* Header */}
+		<Box flexDirection="column" paddingX={1} marginBottom={1}>
+			{/* Header with progress bar on same line */}
 			<Box>
+				<Icon name="todo-list" color={theme.toolHeader} />
 				<Text color={theme.toolHeader} bold>
-					☑ {title}
+					{" "}
+					{title}
 				</Text>
-			</Box>
-
-			{/* Border top */}
-			<Box>
-				<Text color={theme.borderColor}>{"─".repeat(50)}</Text>
+				{showProgress && (
+					<>
+						<Text> </Text>
+						<ProgressBar value={completedCount} max={totalCount} width={16} />
+					</>
+				)}
 			</Box>
 
 			{/* TODO items */}
-			<Box flexDirection="column" paddingLeft={1}>
+			<Box flexDirection="column" paddingLeft={1} marginTop={1}>
 				{displayTodos.map((todo, index) => {
-					const icon = STATUS_ICONS[todo.status] || STATUS_ICONS.pending
+					const iconName = STATUS_ICON_NAMES[todo.status] || STATUS_ICON_NAMES.pending
 					const color = getStatusColor(todo.status)
 
 					// Check if this item changed status
@@ -130,9 +132,8 @@ function TodoDisplay({
 
 					return (
 						<Box key={todo.id || `todo-${index}`}>
-							<Text color={color}>
-								{icon} {todo.content}
-							</Text>
+							<Icon name={iconName} color={color} />
+							<Text color={color}> {todo.content}</Text>
 							{statusChanged && (
 								<Text color={theme.dimText} dimColor>
 									{" "}
@@ -155,23 +156,6 @@ function TodoDisplay({
 					)
 				})}
 			</Box>
-
-			{/* Progress bar and stats */}
-			{showProgress && (
-				<Box flexDirection="column" marginTop={1}>
-					<Box>
-						<Text color={theme.borderColor}>{"─".repeat(50)}</Text>
-					</Box>
-					<Box paddingLeft={1}>
-						<ProgressBar value={completedCount} max={totalCount} width={16} />
-						<Text color={theme.dimText}>
-							{" "}
-							{completedCount}/{totalCount} completed
-							{inProgressCount > 0 && `, ${inProgressCount} in progress`}
-						</Text>
-					</Box>
-				</Box>
-			)}
 		</Box>
 	)
 }

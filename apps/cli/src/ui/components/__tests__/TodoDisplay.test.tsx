@@ -3,8 +3,20 @@ import { render } from "ink-testing-library"
 import type { TodoItem } from "@roo-code/types"
 
 import TodoDisplay from "../TodoDisplay.js"
+import { resetNerdFontCache } from "../Icon.js"
 
 describe("TodoDisplay", () => {
+	beforeEach(() => {
+		// Use fallback icons in tests so they render as visible characters
+		process.env.ROOCODE_NERD_FONT = "0"
+		resetNerdFontCache()
+	})
+
+	afterEach(() => {
+		delete process.env.ROOCODE_NERD_FONT
+		resetNerdFontCache()
+	})
+
 	const mockTodos: TodoItem[] = [
 		{ id: "1", content: "Analyze requirements", status: "completed" },
 		{ id: "2", content: "Design architecture", status: "completed" },
@@ -17,8 +29,8 @@ describe("TodoDisplay", () => {
 		const { lastFrame } = render(<TodoDisplay todos={mockTodos} />)
 		const output = lastFrame()
 
-		// Check header
-		expect(output).toContain("TODO List Updated")
+		// Check header (default title is "Progress")
+		expect(output).toContain("Progress")
 
 		// Check all items are rendered
 		expect(output).toContain("Analyze requirements")
@@ -27,7 +39,7 @@ describe("TodoDisplay", () => {
 		expect(output).toContain("Write tests")
 		expect(output).toContain("Update documentation")
 
-		// Check status icons are present
+		// Check status icons are present (fallback icons)
 		expect(output).toContain("✓") // completed
 		expect(output).toContain("→") // in_progress
 		expect(output).toContain("○") // pending
@@ -37,8 +49,8 @@ describe("TodoDisplay", () => {
 		const { lastFrame } = render(<TodoDisplay todos={mockTodos} showProgress={true} />)
 		const output = lastFrame()
 
-		// Check progress stats
-		expect(output).toContain("2/5 completed")
+		// Check progress bar shows percentage (2/5 = 40%)
+		expect(output).toContain("40%")
 	})
 
 	it("hides progress bar when showProgress is false", () => {
@@ -132,7 +144,9 @@ describe("TodoDisplay", () => {
 		const { lastFrame } = render(<TodoDisplay todos={todosWithMultipleInProgress} showProgress={true} />)
 		const output = lastFrame()
 
-		expect(output).toContain("1/4 completed")
-		expect(output).toContain("2 in progress")
+		// Progress bar shows percentage (1/4 = 25%)
+		expect(output).toContain("25%")
+		// In_progress items render with the arrow icon
+		expect(output).toContain("→") // in_progress indicator
 	})
 })

@@ -2,8 +2,20 @@ import { render } from "ink-testing-library"
 
 import type { TUIMessage } from "../../types.js"
 import ChatHistoryItem from "../ChatHistoryItem.js"
+import { resetNerdFontCache } from "../Icon.js"
 
 describe("ChatHistoryItem", () => {
+	beforeEach(() => {
+		// Use fallback icons in tests so they render as visible characters
+		process.env.ROOCODE_NERD_FONT = "0"
+		resetNerdFontCache()
+	})
+
+	afterEach(() => {
+		delete process.env.ROOCODE_NERD_FONT
+		resetNerdFontCache()
+	})
+
 	describe("content sanitization", () => {
 		it("sanitizes tabs in user messages", () => {
 			const message: TUIMessage = {
@@ -208,8 +220,8 @@ describe("ChatHistoryItem", () => {
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			const output = lastFrame()
 
-			// New format uses icon + display name
-			expect(output).toContain("📄 Read File")
+			// ToolDisplay (fallback without toolData) shows display name without icon
+			expect(output).toContain("Read File")
 			expect(output).toContain("Output text")
 		})
 
@@ -303,7 +315,8 @@ describe("ChatHistoryItem", () => {
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			const output = lastFrame()
 
-			expect(output).toContain("💻 Execute Command")
+			// ToolDisplay (fallback without toolData) shows display name without icon
+			expect(output).toContain("Execute Command")
 			expect(output).toContain("command output")
 		})
 
@@ -320,7 +333,53 @@ describe("ChatHistoryItem", () => {
 			const { lastFrame } = render(<ChatHistoryItem message={message} />)
 			const output = lastFrame()
 
-			expect(output).toContain("🔍 Search Files")
+			// ToolDisplay (fallback without toolData) shows display name without icon
+			expect(output).toContain("Search Files")
+		})
+
+		it("renders attempt_completion tool with CompletionTool renderer", () => {
+			const message: TUIMessage = {
+				id: "12",
+				role: "tool",
+				content: JSON.stringify({
+					tool: "attempt_completion",
+					result: "I've completed the task successfully.",
+				}),
+				toolName: "attempt_completion",
+				toolDisplayName: "Task Complete",
+				toolDisplayOutput: "✅ I've completed the task successfully.",
+				toolData: {
+					tool: "attempt_completion",
+					result: "I've completed the task successfully.",
+				},
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			// CompletionTool renders the result content directly without icon or header
+			expect(output).toContain("I've completed the task successfully.")
+		})
+
+		it("renders ask_followup_question tool with CompletionTool renderer", () => {
+			const message: TUIMessage = {
+				id: "13",
+				role: "tool",
+				content: JSON.stringify({ tool: "ask_followup_question", question: "What color would you like?" }),
+				toolName: "ask_followup_question",
+				toolDisplayName: "Question",
+				toolDisplayOutput: "❓ What color would you like?",
+				toolData: {
+					tool: "ask_followup_question",
+					question: "What color would you like?",
+				},
+			}
+
+			const { lastFrame } = render(<ChatHistoryItem message={message} />)
+			const output = lastFrame()
+
+			// CompletionTool renders the question content directly without icon or header
+			expect(output).toContain("What color would you like?")
 		})
 	})
 })

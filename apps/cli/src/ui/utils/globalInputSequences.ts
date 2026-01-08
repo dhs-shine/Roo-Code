@@ -55,6 +55,19 @@ export const GLOBAL_INPUT_SEQUENCES: GlobalInputSequence[] = [
 			return false
 		},
 	},
+	{
+		id: "ctrl-t",
+		description: "Toggle TODO list viewer",
+		matches: (input, key) => {
+			// Standard Ctrl+T detection
+			if (key.ctrl && input === "t") return true
+			// CSI u encoding: ESC [ 116 ; 5 u (kitty keyboard protocol)
+			// 116 = 't' ASCII code, 5 = Ctrl modifier
+			if (input === "\x1b[116;5u") return true
+			if (input.endsWith("[116;5u")) return true
+			return false
+		},
+	},
 	// Add more global sequences here as needed:
 	// {
 	//   id: "ctrl-n",

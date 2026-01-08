@@ -5,7 +5,28 @@ import type { TextProps } from "ink"
  * Icon names supported by the Icon component.
  * Each icon has a Nerd Font glyph and an ASCII fallback.
  */
-export type IconName = "folder" | "file" | "check" | "cross" | "arrow-right" | "bullet" | "spinner"
+export type IconName =
+	| "folder"
+	| "file"
+	| "file-edit"
+	| "check"
+	| "cross"
+	| "arrow-right"
+	| "bullet"
+	| "spinner"
+	// Tool-related icons
+	| "search"
+	| "terminal"
+	| "browser"
+	| "switch"
+	| "question"
+	| "gear"
+	| "diff"
+	// TODO-related icons
+	| "checkbox"
+	| "checkbox-checked"
+	| "checkbox-progress"
+	| "todo-list"
 
 /**
  * Icon definitions with Nerd Font glyph and ASCII fallback.
@@ -14,11 +35,25 @@ export type IconName = "folder" | "file" | "check" | "cross" | "arrow-right" | "
 const ICONS: Record<IconName, { nerd: string; fallback: string }> = {
 	folder: { nerd: "\udb80\ude4b", fallback: "▼" },
 	file: { nerd: "\udb80\ude14", fallback: "●" },
+	"file-edit": { nerd: "\uf040", fallback: "✎" },
 	check: { nerd: "\uf00c", fallback: "✓" },
 	cross: { nerd: "\uf00d", fallback: "✗" },
 	"arrow-right": { nerd: "\uf061", fallback: "→" },
 	bullet: { nerd: "\uf111", fallback: "•" },
 	spinner: { nerd: "\uf110", fallback: "*" },
+	// Tool-related icons
+	search: { nerd: "\uf002", fallback: "🔍" },
+	terminal: { nerd: "\uf120", fallback: "$" },
+	browser: { nerd: "\uf0ac", fallback: "🌐" },
+	switch: { nerd: "\uf074", fallback: "⇄" },
+	question: { nerd: "\uf128", fallback: "?" },
+	gear: { nerd: "\uf013", fallback: "⚙" },
+	diff: { nerd: "\uf46d", fallback: "±" },
+	// TODO-related icons
+	checkbox: { nerd: "\uf096", fallback: "○" }, // Empty checkbox
+	"checkbox-checked": { nerd: "\uf14a", fallback: "✓" }, // Checked checkbox
+	"checkbox-progress": { nerd: "\uf192", fallback: "→" }, // In progress (dot circle)
+	"todo-list": { nerd: "\uf0cb", fallback: "☑" }, // List icon for TODO header
 }
 
 /**
@@ -104,11 +139,6 @@ export function Icon({ name, useNerdFont, width = 2, color, ...textProps }: Icon
 
 	const shouldUseNerdFont = useNerdFont ?? isNerdFontSupported()
 	const icon = shouldUseNerdFont ? iconDef.nerd : iconDef.fallback
-
-	// DEBUG: Log icon selection
-	console.error(
-		`DEBUG Icon: name=${name}, shouldUseNerdFont=${shouldUseNerdFont}, envOverride=${process.env.ROOCODE_NERD_FONT}, icon.length=${icon.length}`,
-	)
 
 	// Use fixed-width Box to isolate surrogate pair width calculation
 	// from surrounding text. This prevents the off-by-one truncation bug.

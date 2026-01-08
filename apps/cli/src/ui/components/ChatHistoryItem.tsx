@@ -4,65 +4,7 @@ import { Box, Newline, Text } from "ink"
 import * as theme from "../utils/theme.js"
 import type { TUIMessage } from "../types.js"
 import TodoDisplay from "./TodoDisplay.js"
-
-/**
- * Default icon for unknown tools
- */
-const DEFAULT_TOOL_ICON = "🔧"
-
-/**
- * Tool icons for visual identification
- */
-const TOOL_ICONS: Record<string, string> = {
-	// File operations
-	readFile: "📄",
-	read_file: "📄",
-	writeToFile: "📝",
-	write_to_file: "📝",
-	applyDiff: "✏️",
-	apply_diff: "✏️",
-
-	// Directory operations
-	listFiles: "📁",
-	list_files: "📁",
-	listFilesRecursive: "📂",
-	listFilesTopLevel: "📁",
-
-	// Search
-	searchFiles: "🔍",
-	search_files: "🔍",
-
-	// Commands
-	executeCommand: "💻",
-	execute_command: "💻",
-
-	// Browser
-	browserAction: "🌐",
-	browser_action: "🌐",
-
-	// Mode/Task
-	switchMode: "🔀",
-	switch_mode: "🔀",
-	newTask: "📋",
-	new_task: "📋",
-
-	// Questions/Completion
-	askFollowupQuestion: "❓",
-	ask_followup_question: "❓",
-	attemptCompletion: "✅",
-	attempt_completion: "✅",
-
-	// TODO
-	updateTodoList: "☑️",
-	update_todo_list: "☑️",
-}
-
-/**
- * Get the icon for a tool
- */
-function getToolIcon(toolName: string): string {
-	return TOOL_ICONS[toolName] ?? DEFAULT_TOOL_ICON
-}
+import { getToolRenderer } from "./tools/index.js"
 
 /**
  * Tool categories for styling
@@ -145,7 +87,6 @@ function parseToolInfo(content: string): Record<string, unknown> | null {
  */
 function ToolDisplay({ message }: { message: TUIMessage }) {
 	const toolName = message.toolName || "unknown"
-	const icon = getToolIcon(toolName)
 	const category = getToolCategory(toolName)
 	const categoryColor = CATEGORY_COLORS[category]
 
@@ -165,8 +106,7 @@ function ToolDisplay({ message }: { message: TUIMessage }) {
 	const sanitizedRawContent = rawContent ? sanitizeContent(rawContent) : undefined
 
 	// Format the header
-	const displayName = message.toolDisplayName || toolName
-	const headerText = `${icon} ${displayName}`
+	const headerText = message.toolDisplayName || toolName
 
 	return (
 		<Box flexDirection="column" paddingX={1}>
@@ -280,17 +220,16 @@ function ChatHistoryItem({ message }: ChatHistoryItemProps) {
 				message.todos &&
 				message.todos.length > 0
 			) {
-				return (
-					<Box flexDirection="column">
-						<TodoDisplay todos={message.todos} previousTodos={message.previousTodos} showProgress={true} />
-						<Text>
-							<Newline />
-						</Text>
-					</Box>
-				)
+				return <TodoDisplay todos={message.todos} previousTodos={message.previousTodos} showProgress={true} />
 			}
 
-			// Use the improved ToolDisplay component
+			// Use the new structured tool renderers when toolData is available
+			if (message.toolData) {
+				const ToolRenderer = getToolRenderer(message.toolData.tool)
+				return <ToolRenderer toolData={message.toolData} rawContent={message.content} />
+			}
+
+			// Fallback to generic ToolDisplay for messages without toolData
 			return <ToolDisplay message={message} />
 		}
 		case "system":
