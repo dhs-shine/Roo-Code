@@ -401,6 +401,22 @@ create_release() {
     step "8/8" "Creating GitHub release..."
     cd "$REPO_ROOT"
     
+    # Confirm before pushing to GitHub
+    echo ""
+    printf "${YELLOW}${BOLD}About to create GitHub release:${NC}\n"
+    echo "  Tag:      $TAG"
+    echo "  Version:  $VERSION"
+    echo "  Platform: $PLATFORM"
+    echo "  Tarball:  $TARBALL"
+    echo ""
+    read -p "Push this release to GitHub? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        warn "Aborted by user. Cleaning up..."
+        cleanup
+        exit 0
+    fi
+    
     # Build the What's New section from changelog content
     WHATS_NEW_SECTION=""
     if [ -n "$CHANGELOG_CONTENT" ]; then
