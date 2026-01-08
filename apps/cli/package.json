@@ -1,6 +1,6 @@
 {
 	"name": "@roo-code/cli",
-	"version": "0.0.44",
+	"version": "0.0.45",
 	"description": "Roo Code CLI - Run the Roo Code agent from the command line",
 	"private": true,
 	"type": "module",

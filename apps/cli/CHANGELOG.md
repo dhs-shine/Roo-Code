@@ -5,6 +5,53 @@ All notable changes to the `@roo-code/cli` package will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.45] - 2026-01-08
+
+### Changed
+
+- **Major Refactor**: Extracted ~1400 lines from [`App.tsx`](src/ui/App.tsx) into reusable hooks and utilities for better maintainability:
+
+    - [`useExtensionHost`](src/ui/hooks/useExtensionHost.ts) - Extension host connection and lifecycle management
+    - [`useMessageHandlers`](src/ui/hooks/useMessageHandlers.ts) - Message processing and state updates
+    - [`useTaskSubmit`](src/ui/hooks/useTaskSubmit.ts) - Task submission logic
+    - [`useGlobalInput`](src/ui/hooks/useGlobalInput.ts) - Global keyboard shortcut handling
+    - [`useFollowupCountdown`](src/ui/hooks/useFollowupCountdown.ts) - Auto-approval countdown logic
+    - [`useFocusManagement`](src/ui/hooks/useFocusManagement.ts) - Input focus state management
+    - [`usePickerHandlers`](src/ui/hooks/usePickerHandlers.ts) - Picker component event handling
+    - [`uiStateStore`](src/ui/stores/uiStateStore.ts) - UI-specific state (showExitHint, countdown, etc.)
+    - Tool data utilities ([`extractToolData`](src/ui/utils/toolDataUtils.ts), `formatToolOutput`, etc.)
+    - [`HorizontalLine`](src/ui/components/HorizontalLine.tsx) component
+
+- **Performance Optimizations**:
+
+    - Added RAF-style scroll throttling to reduce state updates
+    - Stabilized `useExtensionHost` hook return values with `useCallback`/`useMemo`
+    - Added streaming message debouncing to batch rapid partial updates
+    - Added shallow array equality checks to prevent unnecessary re-renders
+
+- Simplified [`ModeTool`](src/ui/components/tools/ModeTool.tsx) layout to horizontal with mode suffix
+- Simplified logging by removing verbose debug output and adding first/last partial message logging pattern
+- Updated Nerd Font icon codepoints in [`Icon`](src/ui/components/Icon.tsx) component
+
+### Added
+
+- `#` shortcut in help trigger for quick access to task history autocomplete
+
+### Fixed
+
+- Fixed a crash in message handling
+- Added protected file warning in tool approval prompts
+- Enabled `alwaysAllowWriteProtected` for non-interactive mode
+
+### Removed
+
+- Removed unused `renderLogger.ts` utility file
+
+### Tests
+
+- Updated extension-host tests to expect `[Tool Request]` format
+- Updated Icon tests to expect single-char Nerd Font icons
+
 ## [0.0.44] - 2026-01-08
 
 ### Added
