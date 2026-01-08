@@ -1,14 +1,7 @@
 import type { Key } from "ink"
 
-import {
-	GLOBAL_INPUT_SEQUENCES,
-	isGlobalInputSequence,
-	matchesGlobalSequence,
-} from "../ui/utils/globalInputSequences.js"
+import { GLOBAL_INPUT_SEQUENCES, isGlobalInputSequence, matchesGlobalSequence } from "../globalInputSequences.js"
 
-/**
- * Helper to create a minimal Key object for testing
- */
 function createKey(overrides: Partial<Key> = {}): Key {
 	return {
 		upArrow: false,

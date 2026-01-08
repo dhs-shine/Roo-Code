@@ -8,15 +8,15 @@ import type { ExtensionMessage, ClineMessage, ClineAsk, ClineSay, TodoItem, Webv
 import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
 
 import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
-import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
+import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../utils/globalCommands.js"
 import { toolInspectorLog, clearToolInspectorLog } from "../utils/toolInspectorLogger.js"
 import { arePathsEqual } from "../utils/pathUtils.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
 
 import type { AppProps, TUIMessage, PendingAsk, View, ToolData } from "./types.js"
 
-import * as theme from "./utils/theme.js"
-import { matchesGlobalSequence } from "./utils/globalInputSequences.js"
+import * as theme from "./theme.js"
+import { matchesGlobalSequence } from "../utils/globalInputSequences.js"
 
 import { useCLIStore } from "./store.js"
 

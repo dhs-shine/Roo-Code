@@ -4,7 +4,7 @@ import { Text, Box } from "ink"
 import type { TokenUsage } from "@roo-code/types"
 
 import { useTerminalSize } from "../hooks/TerminalSizeContext.js"
-import * as theme from "../utils/theme.js"
+import * as theme from "../theme.js"
 import MetricsDisplay from "./MetricsDisplay.js"
 
 interface HeaderProps {

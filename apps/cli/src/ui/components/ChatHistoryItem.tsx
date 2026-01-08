@@ -1,7 +1,7 @@
 import { memo } from "react"
 import { Box, Newline, Text } from "ink"
 
-import * as theme from "../utils/theme.js"
+import * as theme from "../theme.js"
 import type { TUIMessage } from "../types.js"
 import TodoDisplay from "./TodoDisplay.js"
 import { getToolRenderer } from "./tools/index.js"

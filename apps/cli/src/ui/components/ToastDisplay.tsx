@@ -2,7 +2,7 @@ import { memo } from "react"
 import { Text, Box } from "ink"
 
 import type { Toast, ToastType } from "../hooks/useToast.js"
-import * as theme from "../utils/theme.js"
+import * as theme from "../theme.js"
 
 interface ToastDisplayProps {
 	/** The current toast to display (null if no toast) */

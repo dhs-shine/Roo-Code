@@ -5,7 +5,7 @@
 
 import { Box, Text } from "ink"
 
-import * as theme from "../../utils/theme.js"
+import * as theme from "../../theme.js"
 import { Icon } from "../Icon.js"
 import type { ToolRendererProps } from "./types.js"
 import { truncateText, sanitizeContent, getToolDisplayName, getToolIconName, parseDiff } from "./utils.js"

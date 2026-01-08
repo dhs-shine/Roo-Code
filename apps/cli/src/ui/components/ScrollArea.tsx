@@ -1,7 +1,7 @@
 import { Box, DOMElement, measureElement, Text, useInput } from "ink"
 import { useEffect, useReducer, useRef, useCallback, useMemo, useState } from "react"
 
-import * as theme from "../utils/theme.js"
+import * as theme from "../theme.js"
 
 interface ScrollAreaState {
 	innerHeight: number

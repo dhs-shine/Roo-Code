@@ -1,4 +1,4 @@
-import { useToastStore } from "../ui/hooks/useToast.js"
+import { useToastStore } from "../useToast.js"
 
 describe("useToastStore", () => {
 	beforeEach(() => {

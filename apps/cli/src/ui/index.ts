@@ -17,7 +17,7 @@ export type { UseInputHistoryOptions, UseInputHistoryReturn } from "./hooks/useI
 export { useCLIStore } from "./store.js"
 
 // Theme
-export * as theme from "./utils/theme.js"
+export * as theme from "./theme.js"
 
 // Types
 export * from "./types.js"

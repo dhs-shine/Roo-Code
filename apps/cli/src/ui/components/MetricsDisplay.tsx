@@ -3,7 +3,7 @@ import { Text, Box } from "ink"
 
 import type { TokenUsage } from "@roo-code/types"
 
-import * as theme from "../utils/theme.js"
+import * as theme from "../theme.js"
 import ProgressBar from "./ProgressBar.js"
 
 interface MetricsDisplayProps {

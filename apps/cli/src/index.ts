@@ -18,7 +18,7 @@ import {
 import { setLogger } from "@roo-code/vscode-shim"
 
 import { ExtensionHost } from "./extension-host.js"
-import { getEnvVarName, getApiKeyFromEnv, getDefaultExtensionPath } from "./utils.js"
+import { getEnvVarName, getApiKeyFromEnv, getDefaultExtensionPath } from "./utils/extensionHostUtils.js"
 
 const DEFAULTS = {
 	mode: "code",

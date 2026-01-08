@@ -1,4 +1,4 @@
-import { useCLIStore } from "../ui/store.js"
+import { useCLIStore } from "../store.js"
 
 describe("useCLIStore", () => {
 	beforeEach(() => {

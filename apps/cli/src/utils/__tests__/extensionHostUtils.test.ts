@@ -1,12 +1,8 @@
-/**
- * Unit tests for CLI utility functions
- */
-
-import { getEnvVarName, getApiKeyFromEnv, getDefaultExtensionPath } from "../utils.js"
 import fs from "fs"
 import path from "path"
 
-// Mock fs module
+import { getEnvVarName, getApiKeyFromEnv, getDefaultExtensionPath } from "../extensionHostUtils.js"
+
 vi.mock("fs")
 
 describe("getEnvVarName", () => {
