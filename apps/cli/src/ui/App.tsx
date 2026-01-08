@@ -193,6 +193,8 @@ function AppInner({
 		setAllSlashCommands,
 		setAvailableModes,
 		setTaskHistory,
+		currentTaskId,
+		setCurrentTaskId,
 		currentMode,
 		setCurrentMode,
 		tokenUsage,
@@ -567,6 +569,7 @@ function AppInner({
 	const handleSayMessage = useCallback(
 		(ts: number, say: SayType, text: string, partial: boolean) => {
 			const messageId = ts.toString()
+			const isResuming = useCLIStore.getState().isResumingTask
 
 			if (say === "checkpoint_saved") {
 				return
@@ -580,7 +583,9 @@ function AppInner({
 				return
 			}
 
-			if (say === "text" && !firstTextMessageSkipped.current) {
+			// Skip first text message ONLY for new tasks, not resumed tasks
+			// When resuming, we want to show all historical messages including the first one
+			if (say === "text" && !firstTextMessageSkipped.current && !isResuming) {
 				firstTextMessageSkipped.current = true
 				seenMessageIds.current.add(messageId)
 				return
@@ -691,6 +696,9 @@ function AppInner({
 				// Mark that a task has been started so subsequent messages continue the task
 				// (instead of starting a brand new task via runTask)
 				setHasStartedTask(true)
+				// Clear the resuming flag since we're now ready for interaction
+				// Historical messages should already be displayed from state processing
+				useCLIStore.getState().setIsResumingTask(false)
 				// Do not set pendingAsk - let the normal text input appear
 				return
 			}
@@ -838,6 +846,12 @@ function AppInner({
 						const metrics = consolidateTokenUsage(processed)
 						setTokenUsage(metrics)
 					}
+				}
+
+				// After processing state, clear the resuming flag if it was set
+				// This ensures the flag is cleared even if no resume_task ask message is received
+				if (useCLIStore.getState().isResumingTask) {
+					useCLIStore.getState().setIsResumingTask(false)
 				}
 			} else if (msg.type === "messageUpdated") {
 				const clineMessage = msg.clineMessage as Record<string, unknown>
@@ -1171,20 +1185,37 @@ function AppInner({
 					return
 				}
 
+				// If selecting the same task that's already loaded, just close the picker
+				if (historyItem.id === currentTaskId) {
+					autocompleteRef.current?.closePicker()
+					followupAutocompleteRef.current?.closePicker()
+					return
+				}
+
 				// Send showTaskWithId message to extension to resume the task
 				if (hostRef.current) {
-					// Reset CLI state before resuming task
-					useCLIStore.getState().reset()
+					// Use selective reset that preserves global state (taskHistory, modes, commands)
+					useCLIStore.getState().resetForTaskSwitch()
+					// Set the resuming flag so message handlers know we're resuming
+					// This prevents skipping the first text message (which is historical)
+					useCLIStore.getState().setIsResumingTask(true)
+					// Track which task we're switching to
+					setCurrentTaskId(historyItem.id)
+					// Reset refs to avoid stale state across task switches
 					seenMessageIds.current.clear()
 					firstTextMessageSkipped.current = false
 
 					// Send message to resume the selected task
+					// This triggers createTaskWithHistoryItem -> postStateToWebview
+					// which includes clineMessages and handles mode restoration
 					hostRef.current.sendToExtension({ type: "showTaskWithId", text: historyItem.id })
 
-					// Re-request state, commands and modes since reset() cleared them
-					hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
-					hostRef.current.sendToExtension({ type: "requestCommands" })
-					hostRef.current.sendToExtension({ type: "requestModes" })
+					// DON'T send these redundant requests - they cause race conditions:
+					// - showTaskWithId already triggers postStateToWebview which includes everything
+					// - resetForTaskSwitch preserves taskHistory, modes, and commands
+					// hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
+					// hostRef.current.sendToExtension({ type: "requestCommands" })
+					// hostRef.current.sendToExtension({ type: "requestModes" })
 				}
 
 				// Close the picker
@@ -1196,7 +1227,7 @@ function AppInner({
 				followupAutocompleteRef.current?.handleItemSelect(item)
 			}
 		},
-		[pickerState.activeTrigger, isLoading, showInfo],
+		[pickerState.activeTrigger, isLoading, showInfo, currentTaskId, setCurrentTaskId],
 	)
 
 	// Handle picker close from external PickerSelect

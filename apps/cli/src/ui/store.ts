@@ -35,6 +35,10 @@ interface CLIState {
 	hasStartedTask: boolean
 	error: string | null
 
+	// Task resumption flag - true when resuming a task from history
+	// Used to modify message processing behavior (e.g., don't skip first text message)
+	isResumingTask: boolean
+
 	// Autocomplete data (from API/extension)
 	fileSearchResults: FileSearchResult[]
 	allSlashCommands: SlashCommandResult[]
@@ -42,6 +46,9 @@ interface CLIState {
 
 	// Task history (for resuming previous tasks)
 	taskHistory: TaskHistoryItem[]
+
+	// Current task ID (for detecting same-task reselection)
+	currentTaskId: string | null
 
 	// Current mode (updated reactively when mode changes)
 	currentMode: string | null
@@ -70,6 +77,10 @@ interface CLIActions {
 	setHasStartedTask: (started: boolean) => void
 	setError: (error: string | null) => void
 	reset: () => void
+	/** Reset for task switching - preserves global state (taskHistory, modes, commands) */
+	resetForTaskSwitch: () => void
+	/** Set the isResumingTask flag - used when resuming a task from history */
+	setIsResumingTask: (isResuming: boolean) => void
 
 	// Autocomplete data actions
 	setFileSearchResults: (results: FileSearchResult[]) => void
@@ -78,6 +89,9 @@ interface CLIActions {
 
 	// Task history action
 	setTaskHistory: (history: TaskHistoryItem[]) => void
+
+	// Current task ID action
+	setCurrentTaskId: (taskId: string | null) => void
 
 	// Current mode action
 	setCurrentMode: (mode: string | null) => void
@@ -98,10 +112,12 @@ const initialState: CLIState = {
 	isComplete: false,
 	hasStartedTask: false,
 	error: null,
+	isResumingTask: false,
 	fileSearchResults: [],
 	allSlashCommands: [],
 	availableModes: [],
 	taskHistory: [],
+	currentTaskId: null,
 	currentMode: null,
 	tokenUsage: null,
 	routerModels: null,
@@ -160,10 +176,36 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	setHasStartedTask: (started) => set({ hasStartedTask: started }),
 	setError: (error) => set({ error }),
 	reset: () => set(initialState),
+	resetForTaskSwitch: () =>
+		set((state) => ({
+			// Clear task-specific state
+			messages: [],
+			pendingAsk: null,
+			isLoading: false,
+			isComplete: false,
+			hasStartedTask: false,
+			error: null,
+			isResumingTask: false,
+			tokenUsage: null,
+			currentTodos: [],
+			previousTodos: [],
+			// currentTaskId is preserved - will be updated to new task ID by caller
+			currentTaskId: state.currentTaskId,
+			// PRESERVE global state - don't clear these
+			taskHistory: state.taskHistory,
+			availableModes: state.availableModes,
+			allSlashCommands: state.allSlashCommands,
+			fileSearchResults: state.fileSearchResults,
+			currentMode: state.currentMode,
+			routerModels: state.routerModels,
+			apiConfiguration: state.apiConfiguration,
+		})),
+	setIsResumingTask: (isResuming) => set({ isResumingTask: isResuming }),
 	setFileSearchResults: (results) => set({ fileSearchResults: results }),
 	setAllSlashCommands: (commands) => set({ allSlashCommands: commands }),
 	setAvailableModes: (modes) => set({ availableModes: modes }),
 	setTaskHistory: (history) => set({ taskHistory: history }),
+	setCurrentTaskId: (taskId) => set({ currentTaskId: taskId }),
 	setCurrentMode: (mode) => set({ currentMode: mode }),
 	setTokenUsage: (usage) => set({ tokenUsage: usage }),
 	setRouterModels: (models) => set({ routerModels: models }),
