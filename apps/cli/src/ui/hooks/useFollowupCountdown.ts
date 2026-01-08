@@ -23,6 +23,12 @@ export function useFollowupCountdown({ pendingAsk, onAutoSubmit }: UseFollowupCo
 	const { showCustomInput, countdownSeconds, setCountdownSeconds } = useUIStateStore()
 	const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
+	// Use ref for onAutoSubmit to avoid stale closure issues without needing it in dependencies
+	const onAutoSubmitRef = useRef(onAutoSubmit)
+	useEffect(() => {
+		onAutoSubmitRef.current = onAutoSubmit
+	}, [onAutoSubmit])
+
 	// Cleanup interval on unmount
 	useEffect(() => {
 		return () => {
@@ -63,7 +69,7 @@ export function useFollowupCountdown({ pendingAsk, onAutoSubmit }: UseFollowupCo
 					if (pendingAsk?.suggestions && pendingAsk.suggestions.length > 0) {
 						const firstSuggestion = pendingAsk.suggestions[0]
 						if (firstSuggestion) {
-							onAutoSubmit(firstSuggestion.answer)
+							onAutoSubmitRef.current(firstSuggestion.answer)
 						}
 					}
 				} else {
@@ -71,8 +77,11 @@ export function useFollowupCountdown({ pendingAsk, onAutoSubmit }: UseFollowupCo
 				}
 			}, 1000)
 		} else {
-			// No countdown needed
-			setCountdownSeconds(null)
+			// Only set to null if not already null to prevent unnecessary state updates
+			// This is critical to avoid infinite render loops
+			if (countdownSeconds !== null) {
+				setCountdownSeconds(null)
+			}
 		}
 
 		return () => {
@@ -81,7 +90,9 @@ export function useFollowupCountdown({ pendingAsk, onAutoSubmit }: UseFollowupCo
 				countdownIntervalRef.current = null
 			}
 		}
-	}, [pendingAsk?.id, pendingAsk?.type, showCustomInput, onAutoSubmit, setCountdownSeconds, pendingAsk?.suggestions])
+		// Note: countdownSeconds is intentionally NOT in deps - we only read it to avoid
+		// unnecessary state updates, not to react to its changes
+	}, [pendingAsk?.id, pendingAsk?.type, showCustomInput, setCountdownSeconds])
 
 	/**
 	 * Cancel the countdown timer (called when user interacts with the menu)
