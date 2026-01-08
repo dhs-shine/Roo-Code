@@ -1,41 +1,47 @@
 import { Box, Text, useApp, useInput } from "ink"
 import { Select } from "@inkjs/ui"
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { EventEmitter } from "events"
-import { randomUUID } from "crypto"
+import type { WebviewMessage } from "@roo-code/types"
 
-import type { ExtensionMessage, ClineMessage, ClineAsk, ClineSay, TodoItem, WebviewMessage } from "@roo-code/types"
-import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
-
-import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
-import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../utils/globalCommands.js"
-import { toolInspectorLog, clearToolInspectorLog } from "../utils/toolInspectorLogger.js"
+import { getGlobalCommandsForAutocomplete } from "../utils/globalCommands.js"
 import { arePathsEqual } from "../utils/pathUtils.js"
 import { getContextWindow } from "../utils/getContextWindow.js"
 
-import type { AppProps, TUIMessage, PendingAsk, View, ToolData } from "./types.js"
-
+import type { AppProps } from "./types.js"
 import * as theme from "./theme.js"
-import { matchesGlobalSequence } from "../utils/globalInputSequences.js"
 
 import { useCLIStore } from "./store.js"
+import { useUIStateStore } from "./stores/uiStateStore.js"
 
-import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
-import { useToast } from "./hooks/useToast.js"
+// Import extracted hooks
+import {
+	TerminalSizeProvider,
+	useTerminalSize,
+	useToast,
+	useExtensionHost,
+	useMessageHandlers,
+	useTaskSubmit,
+	useGlobalInput,
+	useFollowupCountdown,
+	useFocusManagement,
+	usePickerHandlers,
+} from "./hooks/index.js"
 
+// Import extracted utilities
+import { getView } from "./utils/index.js"
+
+// Import components
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
 import ToastDisplay from "./components/ToastDisplay.js"
 import TodoDisplay from "./components/TodoDisplay.js"
+import { HorizontalLine } from "./components/HorizontalLine.js"
 import {
 	type AutocompleteInputHandle,
-	type AutocompletePickerState,
 	type AutocompleteTrigger,
-	type HistoryResult,
 	type FileResult,
 	type SlashCommandResult,
-	type ModeResult,
 	AutocompleteInput,
 	PickerSelect,
 	createFileTrigger,
@@ -53,19 +59,16 @@ import ScrollIndicator from "./components/ScrollIndicator.js"
 
 const PICKER_HEIGHT = 10
 
-interface ExtensionHostInterface extends EventEmitter {
+interface ExtensionHostInterface {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	on(event: string, handler: (...args: any[]) => void): void
 	activate(): Promise<void>
 	runTask(prompt: string): Promise<void>
 	sendToExtension(message: WebviewMessage): void
 	dispose(): Promise<void>
 }
 
-export interface TUIAppProps extends AppProps {
-	/** Extension host factory - allows dependency injection for testing. */
-	createExtensionHost: (options: ExtensionHostOptions) => ExtensionHostInterface
-}
-
-interface ExtensionHostOptions {
+interface ExtensionHostFactoryOptions {
 	mode: string
 	reasoningEffort?: string
 	apiProvider: string
@@ -80,64 +83,9 @@ interface ExtensionHostOptions {
 	ephemeral?: boolean
 }
 
-/**
- * Determine the current view state based on messages and pending asks
- */
-function getView(messages: TUIMessage[], pendingAsk: PendingAsk | null, isLoading: boolean): View {
-	// If there's a pending ask requiring text input, show input
-	if (pendingAsk?.type === "followup") {
-		return "UserInput"
-	}
-
-	// If there's any pending ask (approval), don't show thinking
-	if (pendingAsk) {
-		return "UserInput"
-	}
-
-	// Initial state or empty - awaiting user input
-	if (messages.length === 0) {
-		return "UserInput"
-	}
-
-	const lastMessage = messages.at(-1)
-	if (!lastMessage) {
-		return "UserInput"
-	}
-
-	// User just sent a message, waiting for response
-	if (lastMessage.role === "user") {
-		return "AgentResponse"
-	}
-
-	// Assistant replied
-	if (lastMessage.role === "assistant") {
-		if (lastMessage.hasPendingToolCalls) {
-			return "ToolUse"
-		}
-
-		// If loading, still waiting for more
-		if (isLoading) {
-			return "AgentResponse"
-		}
-
-		return "UserInput"
-	}
-
-	// Tool result received, waiting for next assistant response
-	if (lastMessage.role === "tool") {
-		return "AgentResponse"
-	}
-
-	return "Default"
-}
-
-/**
- * Full-width horizontal line component - uses terminal size from context
- */
-function HorizontalLine({ active = false }: { active?: boolean }) {
-	const { columns } = useTerminalSize()
-	const color = active ? theme.borderColorActive : theme.borderColor
-	return <Text color={color}>{"─".repeat(columns)}</Text>
+export interface TUIAppProps extends AppProps {
+	/** Extension host factory - allows dependency injection for testing. */
+	createExtensionHost: (options: ExtensionHostFactoryOptions) => ExtensionHostInterface
 }
 
 /**
@@ -167,35 +115,29 @@ function AppInner({
 		pendingAsk,
 		isLoading,
 		isComplete,
-		hasStartedTask,
+		hasStartedTask: _hasStartedTask,
 		error,
-		addMessage,
-		setPendingAsk,
-		setLoading,
-		setComplete,
-		setHasStartedTask,
-		setError,
 		fileSearchResults,
 		allSlashCommands,
 		availableModes,
 		taskHistory,
-		setFileSearchResults,
-		setAllSlashCommands,
-		setAvailableModes,
-		setTaskHistory,
-		currentTaskId,
-		setCurrentTaskId,
 		currentMode,
-		setCurrentMode,
 		tokenUsage,
 		routerModels,
 		apiConfiguration,
-		setTokenUsage,
-		setRouterModels,
-		setApiConfiguration,
 		currentTodos,
-		setTodos,
 	} = useCLIStore()
+
+	// Access UI state from the UI store
+	const {
+		showExitHint,
+		countdownSeconds,
+		showCustomInput,
+		isTransitioningToCustomInput,
+		showTodoViewer,
+		pickerState,
+		setIsTransitioningToCustomInput,
+	} = useUIStateStore()
 
 	// Compute context window from router models and API configuration
 	const contextWindow = useMemo(
@@ -203,7 +145,6 @@ function AppInner({
 		[routerModels, apiConfiguration],
 	)
 
-	const hostRef = useRef<ExtensionHostInterface | null>(null)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const autocompleteRef = useRef<AutocompleteInputHandle<any>>(null)
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -229,44 +170,6 @@ function AppInner({
 		taskHistoryRef.current = taskHistory
 	}, [taskHistory])
 
-	// Track seen message timestamps to filter duplicates and the prompt echo
-	const seenMessageIds = useRef<Set<string>>(new Set())
-	const firstTextMessageSkipped = useRef(false)
-
-	// Track pending command for injecting into command_output toolData
-	const pendingCommandRef = useRef<string | null>(null)
-
-	// Track Ctrl+C presses for "press again to exit" behavior
-	const [showExitHint, setShowExitHint] = useState(false)
-	const exitHintTimeout = useRef<NodeJS.Timeout | null>(null)
-	const pendingExit = useRef(false)
-
-	// Countdown timer for auto-accepting followup questions
-	const [countdownSeconds, setCountdownSeconds] = useState<number | null>(null)
-	const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
-
-	// Track whether user wants to type custom response for followup questions
-	const [showCustomInput, setShowCustomInput] = useState(false)
-	// Ref to track transition state (handles async state update timing)
-	const isTransitioningToCustomInput = useRef(false)
-
-	// Manual focus override: 'scroll' | 'input' | null (null = auto-determine)
-	const [manualFocus, setManualFocus] = useState<"scroll" | "input" | null>(null)
-
-	// State for TODO list viewer (shown via Ctrl+T shortcut)
-	const [showTodoViewer, setShowTodoViewer] = useState(false)
-
-	// Autocomplete picker state (received from AutocompleteInput via callback)
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const [pickerState, setPickerState] = useState<AutocompletePickerState<any>>({
-		activeTrigger: null,
-		results: [],
-		selectedIndex: 0,
-		isOpen: false,
-		isLoading: false,
-		triggerInfo: null,
-	})
-
 	// Scroll area state
 	const { rows } = useTerminalSize()
 	const [scrollState, setScrollState] = useState({ scrollTop: 0, maxScroll: 0, isAtBottom: true })
@@ -275,33 +178,88 @@ function AppInner({
 	// Toast notifications for ephemeral messages (e.g., mode changes)
 	const { currentToast, showInfo } = useToast()
 
+	// Initialize message handlers hook - provides refs and handler
+	const {
+		handleExtensionMessage,
+		seenMessageIds,
+		pendingCommandRef: _pendingCommandRef,
+		firstTextMessageSkipped,
+	} = useMessageHandlers({
+		verbose,
+		nonInteractive,
+	})
+
+	// Initialize extension host hook
+	const { sendToExtension, runTask, cleanup } = useExtensionHost({
+		initialPrompt,
+		mode,
+		reasoningEffort,
+		apiProvider,
+		apiKey,
+		model,
+		workspacePath,
+		extensionPath,
+		verbose,
+		debug,
+		nonInteractive,
+		ephemeral,
+		exitOnComplete,
+		onExtensionMessage: handleExtensionMessage,
+		createExtensionHost,
+	})
+
+	// Initialize task submit hook
+	const { handleSubmit, handleApprove, handleReject } = useTaskSubmit({
+		sendToExtension,
+		runTask,
+		seenMessageIds,
+		firstTextMessageSkipped,
+	})
+
+	// Initialize focus management hook
+	const { canToggleFocus, isScrollAreaActive, isInputAreaActive, toggleFocus } = useFocusManagement({
+		showApprovalPrompt: Boolean(pendingAsk && pendingAsk.type !== "followup"),
+		pendingAsk,
+	})
+
+	// Initialize countdown hook for followup auto-accept
+	const { cancelCountdown } = useFollowupCountdown({
+		pendingAsk,
+		onAutoSubmit: handleSubmit,
+	})
+
+	// Initialize picker handlers hook
+	const { handlePickerStateChange, handlePickerSelect, handlePickerClose, handlePickerIndexChange } =
+		usePickerHandlers({
+			autocompleteRef,
+			followupAutocompleteRef,
+			sendToExtension,
+			showInfo,
+			seenMessageIds,
+			firstTextMessageSkipped,
+		})
+
+	// Initialize global input hook
+	useGlobalInput({
+		canToggleFocus,
+		isScrollAreaActive,
+		pickerIsOpen: pickerState.isOpen,
+		availableModes,
+		currentMode,
+		mode,
+		sendToExtension,
+		showInfo,
+		exit,
+		cleanup,
+		toggleFocus,
+		closePicker: handlePickerClose,
+	})
+
 	// Determine current view
 	const view = getView(messages, pendingAsk, isLoading)
 
 	// Determine if we should show the approval prompt (Y/N) instead of text input
 	const showApprovalPrompt = pendingAsk && pendingAsk.type !== "followup"
-
-	// Determine if we're in a mode where focus can be toggled (text input is available)
-	const canToggleFocus =
-		!showApprovalPrompt &&
-		(!pendingAsk || // Initial input or task complete or loading
-			pendingAsk.type === "followup" || // Followup question with suggestions or custom input
-			showCustomInput) // Custom input mode
-
-	// Determine if scroll area should capture keyboard input
-	const isScrollAreaActive: boolean =
-		manualFocus === "scroll" ? true : manualFocus === "input" ? false : Boolean(showApprovalPrompt)
-
-	// Determine if input area is active (for visual focus indicator)
-	const isInputAreaActive: boolean =
-		manualFocus === "input" ? true : manualFocus === "scroll" ? false : !showApprovalPrompt
-
-	// Reset manual focus when view changes (e.g., agent starts responding)
-	useEffect(() => {
-		if (!canToggleFocus) {
-			setManualFocus(null)
-		}
-	}, [canToggleFocus])
 
 	// Display all messages including partial (streaming) ones
 	const displayMessages = useMemo(() => {
@@ -322,22 +280,16 @@ function AppInner({
 		setScrollState({ scrollTop, maxScroll, isAtBottom })
 	}, [])
 
-	// Cleanup function
-	const cleanup = useCallback(async () => {
-		if (hostRef.current) {
-			await hostRef.current.dispose()
-			hostRef.current = null
-		}
-	}, [])
-
-	// File search handler for the file trigger.
-	const handleFileSearch = useCallback((query: string) => {
-		if (!hostRef.current) {
-			return
-		}
-
-		hostRef.current.sendToExtension({ type: "searchFiles", query })
-	}, [])
+	// File search handler for the file trigger
+	const handleFileSearch = useCallback(
+		(query: string) => {
+			if (!sendToExtension) {
+				return
+			}
+			sendToExtension({ type: "searchFiles", query })
+		},
+		[sendToExtension],
+	)
 
 	// Create autocomplete triggers
 	// Using 'any' to allow mixing different trigger types (FileResult, SlashCommandResult, ModeResult, HelpShortcutResult, HistoryResult)
@@ -385,178 +337,6 @@ function AppInner({
 		return [fileTrigger, slashCommandTrigger, modeTrigger, helpTrigger, historyTrigger]
 	}, [handleFileSearch, workspacePath]) // Only depend on handleFileSearch and workspacePath - data accessed via refs
 
-	// Handle Ctrl+C, Tab for focus switching, Escape to cancel task, and Ctrl+M for mode cycling
-	useInput((input, key) => {
-		// Tab to toggle focus between scroll area and input (only when input is available)
-		if (key.tab && canToggleFocus && !pickerState.isOpen) {
-			setManualFocus((prev) => {
-				if (prev === "scroll") return "input"
-				if (prev === "input") return "scroll"
-				return isScrollAreaActive ? "input" : "scroll"
-			})
-			return
-		}
-
-		// Ctrl+M to cycle through modes (only when not loading and we have available modes)
-		// Uses centralized global input sequence detection
-		if (matchesGlobalSequence(input, key, "ctrl-m")) {
-			// Don't allow mode switching while a task is in progress (loading)
-			if (isLoading) {
-				showInfo("Cannot switch modes while task is in progress", 2000)
-				return
-			}
-
-			// Need at least 2 modes to cycle
-			if (availableModes.length < 2) {
-				return
-			}
-
-			// Find current mode index
-			const currentModeSlug = currentMode || mode
-			const currentIndex = availableModes.findIndex((m) => m.slug === currentModeSlug)
-			const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % availableModes.length
-			const nextMode = availableModes[nextIndex]
-
-			if (nextMode && hostRef.current) {
-				// Send mode change to extension
-				hostRef.current.sendToExtension({ type: "switchMode", mode: nextMode.slug })
-				// Show toast notification with the mode name
-				showInfo(`Switched to ${nextMode.name}`, 2000)
-			}
-			return
-		}
-
-		// Ctrl+T to toggle TODO list viewer
-		if (matchesGlobalSequence(input, key, "ctrl-t")) {
-			// Close picker if open
-			if (pickerState.isOpen) {
-				autocompleteRef.current?.closePicker()
-				followupAutocompleteRef.current?.closePicker()
-			}
-			// Toggle TODO viewer
-			setShowTodoViewer((prev) => {
-				const newValue = !prev
-				if (newValue && currentTodos.length === 0) {
-					showInfo("No TODO list available", 2000)
-					return false
-				}
-				return newValue
-			})
-			return
-		}
-
-		// Escape key to cancel/pause task when loading (streaming)
-		// Escape key to close TODO viewer
-		if (key.escape && showTodoViewer) {
-			setShowTodoViewer(false)
-			return
-		}
-
-		if (key.escape && isLoading && hostRef.current) {
-			// If picker is open, let the picker handle escape first
-			if (pickerState.isOpen) {
-				return
-			}
-			// Send cancel message to extension (same as webview-ui Cancel button)
-			hostRef.current.sendToExtension({ type: "cancelTask" })
-			return
-		}
-
-		if (key.ctrl && input === "c") {
-			// If picker is open, close it first
-			if (pickerState.isOpen) {
-				autocompleteRef.current?.closePicker()
-				followupAutocompleteRef.current?.closePicker()
-				return
-			}
-
-			if (pendingExit.current) {
-				// Second press - exit immediately
-				if (exitHintTimeout.current) {
-					clearTimeout(exitHintTimeout.current)
-				}
-				cleanup().finally(() => {
-					exit()
-					process.exit(0)
-				})
-			} else {
-				// First press - show hint and wait for second press
-				pendingExit.current = true
-				setShowExitHint(true)
-
-				exitHintTimeout.current = setTimeout(() => {
-					pendingExit.current = false
-					setShowExitHint(false)
-					exitHintTimeout.current = null
-				}, 2000)
-			}
-		}
-	})
-
-	// Cleanup timeout on unmount
-	useEffect(() => {
-		return () => {
-			if (exitHintTimeout.current) {
-				clearTimeout(exitHintTimeout.current)
-			}
-			if (countdownIntervalRef.current) {
-				clearInterval(countdownIntervalRef.current)
-			}
-		}
-	}, [])
-
-	// Countdown timer for auto-accepting followup questions
-	// Start countdown when a followup question with suggestions appears
-	useEffect(() => {
-		// Clear any existing countdown
-		if (countdownIntervalRef.current) {
-			clearInterval(countdownIntervalRef.current)
-			countdownIntervalRef.current = null
-		}
-
-		// Only start countdown for followup questions with suggestions (not custom input mode)
-		if (
-			pendingAsk?.type === "followup" &&
-			pendingAsk.suggestions &&
-			pendingAsk.suggestions.length > 0 &&
-			!showCustomInput
-		) {
-			// Start countdown
-			setCountdownSeconds(FOLLOWUP_TIMEOUT_SECONDS)
-
-			countdownIntervalRef.current = setInterval(() => {
-				setCountdownSeconds((prev) => {
-					if (prev === null || prev <= 1) {
-						// Time's up! Auto-select first option
-						if (countdownIntervalRef.current) {
-							clearInterval(countdownIntervalRef.current)
-							countdownIntervalRef.current = null
-						}
-						// Auto-submit the first suggestion
-						if (pendingAsk?.suggestions && pendingAsk.suggestions.length > 0) {
-							const firstSuggestion = pendingAsk.suggestions[0]
-							if (firstSuggestion) {
-								handleSubmit(firstSuggestion.answer)
-							}
-						}
-						return null
-					}
-					return prev - 1
-				})
-			}, 1000)
-		} else {
-			// No countdown needed
-			setCountdownSeconds(null)
-		}
-
-		return () => {
-			if (countdownIntervalRef.current) {
-				clearInterval(countdownIntervalRef.current)
-				countdownIntervalRef.current = null
-			}
-		}
-	}, [pendingAsk?.id, pendingAsk?.type, showCustomInput]) // Re-run when pendingAsk changes or user switches to custom input
-
 	// Refresh search results when fileSearchResults changes while file picker is open
 	// This handles the async timing where API results arrive after initial search
 	// IMPORTANT: Only run when fileSearchResults array identity changes (new API response)
@@ -586,606 +366,6 @@ function AppInner({
 		}
 	}, [fileSearchResults]) // Only depend on fileSearchResults - read pickerState from ref
 
-	// Map extension say messages to TUI messages
-	const handleSayMessage = useCallback(
-		(ts: number, say: ClineSay, text: string, partial: boolean) => {
-			const messageId = ts.toString()
-			const isResuming = useCLIStore.getState().isResumingTask
-
-			if (say === "checkpoint_saved") {
-				return
-			}
-
-			if (say === "api_req_started" && !verbose) {
-				return
-			}
-
-			if (say === "user_feedback") {
-				seenMessageIds.current.add(messageId)
-				return
-			}
-
-			// Skip first text message ONLY for new tasks, not resumed tasks
-			// When resuming, we want to show all historical messages including the first one
-			if (say === "text" && !firstTextMessageSkipped.current && !isResuming) {
-				firstTextMessageSkipped.current = true
-				seenMessageIds.current.add(messageId)
-				return
-			}
-
-			if (seenMessageIds.current.has(messageId) && !partial) {
-				return
-			}
-
-			let role: TUIMessage["role"] = "assistant"
-			let toolName: string | undefined
-			let toolDisplayName: string | undefined
-			let toolDisplayOutput: string | undefined
-			let toolData: ToolData | undefined
-
-			if (say === "command_output") {
-				role = "tool"
-				toolName = "execute_command"
-				toolDisplayName = "bash"
-				toolDisplayOutput = text
-				const trackedCommand = pendingCommandRef.current
-				toolInspectorLog("say:command_output", { ts, trackedCommand, outputLength: text?.length })
-				toolData = { tool: "execute_command", command: trackedCommand || undefined, output: text }
-				pendingCommandRef.current = null
-				// } else if (say === "tool") {
-				// 	role = "tool"
-
-				// 	try {
-				// 		const toolInfo = JSON.parse(text)
-
-				// 		// Log tool payload for inspection
-				// 		toolInspectorLog("say:tool", {
-				// 			ts,
-				// 			rawText: text,
-				// 			parsedToolInfo: toolInfo,
-				// 			partial,
-				// 		})
-
-				// 		toolName = toolInfo.tool
-				// 		toolDisplayName = toolInfo.tool
-				// 		toolDisplayOutput = formatToolOutput(toolInfo)
-				// 		// Extract structured toolData for rich rendering
-				// 		toolData = extractToolData(toolInfo)
-
-				// 		// Special handling for update_todo_list tool
-				// 		if (toolName === "update_todo_list" || toolName === "updateTodoList") {
-				// 			const todos = parseTodosFromToolInfo(toolInfo)
-				// 			if (todos && todos.length > 0) {
-				// 				// Capture previous todos before updating
-				// 				const prevTodos = [...currentTodos]
-				// 				setTodos(todos)
-
-				// 				seenMessageIds.current.add(messageId)
-
-				// 				addMessage({
-				// 					id: messageId,
-				// 					role: "tool",
-				// 					content: text || "",
-				// 					toolName,
-				// 					toolDisplayName,
-				// 					toolDisplayOutput,
-				// 					partial,
-				// 					originalType: say,
-				// 					todos,
-				// 					previousTodos: prevTodos,
-				// 					toolData,
-				// 				})
-				// 				return
-				// 			}
-				// 		}
-				// 	} catch {
-				// 		toolDisplayOutput = text
-				// 	}
-			} else if (say === "reasoning") {
-				role = "thinking"
-			}
-
-			seenMessageIds.current.add(messageId)
-
-			addMessage({
-				id: messageId,
-				role,
-				content: text || "",
-				toolName,
-				toolDisplayName,
-				toolDisplayOutput,
-				partial,
-				originalType: say,
-				toolData,
-			})
-		},
-		[addMessage, verbose, currentTodos, setTodos],
-	)
-
-	// Handle extension ask messages
-	const handleAskMessage = useCallback(
-		(ts: number, ask: ClineAsk, text: string, partial: boolean) => {
-			const messageId = ts.toString()
-
-			if (partial) {
-				return
-			}
-
-			if (seenMessageIds.current.has(messageId)) {
-				return
-			}
-
-			if (ask === "command_output") {
-				seenMessageIds.current.add(messageId)
-				return
-			}
-
-			// Handle resume_task and resume_completed_task - stop loading and show text input
-			// Do not set pendingAsk - just stop loading so user sees normal input to type new message
-			if (ask === "resume_task" || ask === "resume_completed_task") {
-				seenMessageIds.current.add(messageId)
-				setLoading(false)
-				// Mark that a task has been started so subsequent messages continue the task
-				// (instead of starting a brand new task via runTask)
-				setHasStartedTask(true)
-				// Clear the resuming flag since we're now ready for interaction
-				// Historical messages should already be displayed from state processing
-				useCLIStore.getState().setIsResumingTask(false)
-				// Do not set pendingAsk - let the normal text input appear
-				return
-			}
-
-			if (ask === "completion_result") {
-				seenMessageIds.current.add(messageId)
-				setComplete(true)
-				setLoading(false)
-
-				// Parse the completion result and add a message for CompletionTool to render
-				try {
-					const completionInfo = JSON.parse(text) as Record<string, unknown>
-					const toolData: ToolData = {
-						tool: "attempt_completion",
-						result: completionInfo.result as string | undefined,
-						content: completionInfo.result as string | undefined,
-					}
-
-					addMessage({
-						id: messageId,
-						role: "tool",
-						content: text,
-						toolName: "attempt_completion",
-						toolDisplayName: "Task Complete",
-						toolDisplayOutput: formatToolOutput({ tool: "attempt_completion", ...completionInfo }),
-						originalType: ask,
-						toolData,
-					})
-				} catch {
-					// If parsing fails, still add a basic completion message
-					addMessage({
-						id: messageId,
-						role: "tool",
-						content: text || "Task completed",
-						toolName: "attempt_completion",
-						toolDisplayName: "Task Complete",
-						toolDisplayOutput: "✅ Task completed",
-						originalType: ask,
-						toolData: {
-							tool: "attempt_completion",
-							content: text,
-						},
-					})
-				}
-				return
-			}
-
-			// Track pending command BEFORE nonInteractive handling
-			// This ensures we capture the command text for later injection into command_output toolData
-			if (ask === "command") {
-				toolInspectorLog("ask:command:tracking", { ts, text })
-				pendingCommandRef.current = text
-			}
-
-			if (nonInteractive && ask !== "followup") {
-				seenMessageIds.current.add(messageId)
-
-				if (ask === "tool") {
-					let toolName: string | undefined
-					let toolDisplayName: string | undefined
-					let toolDisplayOutput: string | undefined
-					let formattedContent = text || ""
-					let toolData: ToolData | undefined
-					let todos: TodoItem[] | undefined
-					let previousTodos: TodoItem[] | undefined
-
-					try {
-						const toolInfo = JSON.parse(text) as Record<string, unknown>
-
-						// Log tool payload for inspection (nonInteractive ask)
-						toolInspectorLog("ask:tool:nonInteractive", {
-							ts,
-							rawText: text,
-							parsedToolInfo: toolInfo,
-							partial,
-						})
-
-						toolName = toolInfo.tool as string
-						toolDisplayName = toolInfo.tool as string
-						toolDisplayOutput = formatToolOutput(toolInfo)
-						formattedContent = formatToolAskMessage(toolInfo)
-						// Extract structured toolData for rich rendering
-						toolData = extractToolData(toolInfo)
-
-						// Special handling for update_todo_list tool - extract todos
-						if (toolName === "update_todo_list" || toolName === "updateTodoList") {
-							const parsedTodos = parseTodosFromToolInfo(toolInfo)
-							if (parsedTodos && parsedTodos.length > 0) {
-								todos = parsedTodos
-								// Capture previous todos before updating global state
-								previousTodos = [...currentTodos]
-								setTodos(parsedTodos)
-							}
-						}
-					} catch {
-						// Use raw text if not valid JSON
-					}
-
-					addMessage({
-						id: messageId,
-						role: "tool",
-						content: formattedContent,
-						toolName,
-						toolDisplayName,
-						toolDisplayOutput,
-						originalType: ask,
-						toolData,
-						todos,
-						previousTodos,
-					})
-				} else {
-					addMessage({
-						id: messageId,
-						role: "assistant",
-						content: text || "",
-						originalType: ask,
-					})
-				}
-				return
-			}
-
-			let suggestions: Array<{ answer: string; mode?: string | null }> | undefined
-			let questionText = text
-
-			if (ask === "followup") {
-				try {
-					const data = JSON.parse(text)
-					questionText = data.question || text
-					suggestions = Array.isArray(data.suggest) ? data.suggest : undefined
-				} catch {
-					// Use raw text
-				}
-			} else if (ask === "tool") {
-				try {
-					const toolInfo = JSON.parse(text) as Record<string, unknown>
-
-					// Log tool payload for inspection (interactive ask)
-					toolInspectorLog("ask:tool:interactive", {
-						ts,
-						rawText: text,
-						parsedToolInfo: toolInfo,
-						partial,
-					})
-
-					questionText = formatToolAskMessage(toolInfo)
-				} catch {
-					// Use raw text if not valid JSON
-				}
-			}
-			// Note: ask === "command" is handled above before the nonInteractive block
-
-			seenMessageIds.current.add(messageId)
-
-			setPendingAsk({
-				id: messageId,
-				type: ask,
-				content: questionText,
-				suggestions,
-			})
-		},
-		[addMessage, setPendingAsk, setComplete, setLoading, nonInteractive, currentTodos, setTodos],
-	)
-
-	// Handle extension messages
-	const handleExtensionMessage = useCallback(
-		(msg: ExtensionMessage) => {
-			if (msg.type === "state") {
-				const state = msg.state
-
-				if (!state) {
-					return
-				}
-
-				// Extract and update current mode from state.
-				const newMode = state.mode
-
-				if (newMode) {
-					setCurrentMode(newMode)
-				}
-
-				// Extract and update task history from state.
-				const newTaskHistory = state.taskHistory
-
-				if (newTaskHistory && Array.isArray(newTaskHistory)) {
-					setTaskHistory(newTaskHistory)
-				}
-
-				const clineMessages = state.clineMessages
-
-				if (clineMessages) {
-					for (const clineMsg of clineMessages) {
-						const ts = clineMsg.ts
-						const type = clineMsg.type
-						const say = clineMsg.say
-						const ask = clineMsg.ask
-						const text = clineMsg.text || ""
-						const partial = clineMsg.partial || false
-
-						if (type === "say" && say) {
-							handleSayMessage(ts, say, text, partial)
-						} else if (type === "ask" && ask) {
-							handleAskMessage(ts, ask, text, partial)
-						}
-					}
-
-					// Compute token usage metrics from clineMessages.
-					// Skip first message (task prompt) as per webview UI pattern.
-					if (clineMessages.length > 1) {
-						const processed = consolidateApiRequests(
-							consolidateCommands(clineMessages.slice(1) as ClineMessage[]),
-						)
-
-						const metrics = consolidateTokenUsage(processed)
-						setTokenUsage(metrics)
-					}
-				}
-
-				// After processing state, clear the resuming flag if it was set
-				// This ensures the flag is cleared even if no resume_task ask message is received
-				if (useCLIStore.getState().isResumingTask) {
-					useCLIStore.getState().setIsResumingTask(false)
-				}
-			} else if (msg.type === "messageUpdated") {
-				const clineMessage = msg.clineMessage
-
-				if (!clineMessage) {
-					return
-				}
-
-				const ts = clineMessage.ts
-				const type = clineMessage.type
-				const say = clineMessage.say
-				const ask = clineMessage.ask
-				const text = clineMessage.text || ""
-				const partial = clineMessage.partial || false
-
-				if (type === "say" && say) {
-					handleSayMessage(ts, say, text, partial)
-				} else if (type === "ask" && ask) {
-					handleAskMessage(ts, ask, text, partial)
-				}
-			} else if (msg.type === "fileSearchResults") {
-				setFileSearchResults((msg.results as FileResult[]) || [])
-			} else if (msg.type === "commands") {
-				setAllSlashCommands((msg.commands as SlashCommandResult[]) || [])
-			} else if (msg.type === "modes") {
-				setAvailableModes((msg.modes as ModeResult[]) || [])
-			} else if (msg.type === "routerModels") {
-				if (msg.routerModels) {
-					setRouterModels(msg.routerModels)
-				}
-			}
-		},
-		[
-			handleSayMessage,
-			handleAskMessage,
-			setFileSearchResults,
-			setAllSlashCommands,
-			setAvailableModes,
-			setCurrentMode,
-			setTokenUsage,
-			setRouterModels,
-			setApiConfiguration,
-			setTaskHistory,
-		],
-	)
-
-	// Initialize extension host
-	useEffect(() => {
-		const init = async () => {
-			// Clear tool inspector log for fresh session
-			clearToolInspectorLog()
-
-			toolInspectorLog("session:start", {
-				timestamp: new Date().toISOString(),
-				mode,
-				nonInteractive,
-			})
-
-			try {
-				const host = createExtensionHost({
-					mode,
-					reasoningEffort: reasoningEffort === "unspecified" ? undefined : reasoningEffort,
-					apiProvider,
-					apiKey,
-					model,
-					workspacePath,
-					extensionPath,
-					verbose: debug,
-					quiet: !verbose && !debug,
-					nonInteractive,
-					disableOutput: true,
-					ephemeral,
-				})
-
-				hostRef.current = host
-
-				host.on("extensionWebviewMessage", handleExtensionMessage)
-
-				host.on("taskComplete", async () => {
-					setComplete(true)
-					setLoading(false)
-					if (exitOnComplete) {
-						await cleanup()
-						exit()
-						setTimeout(() => process.exit(0), 100)
-					}
-				})
-
-				host.on("taskError", (err: string) => {
-					setError(err)
-					setLoading(false)
-				})
-
-				await host.activate()
-
-				// Request initial state from extension (triggers postStateToWebview which includes taskHistory)
-				host.sendToExtension({ type: "webviewDidLaunch" })
-				host.sendToExtension({ type: "requestCommands" })
-				host.sendToExtension({ type: "requestModes" })
-
-				setLoading(false)
-
-				if (initialPrompt) {
-					setHasStartedTask(true)
-					setLoading(true)
-					addMessage({
-						id: randomUUID(),
-						role: "user",
-						content: initialPrompt,
-					})
-					await host.runTask(initialPrompt)
-				}
-			} catch (err) {
-				setError(err instanceof Error ? err.message : String(err))
-				setLoading(false)
-			}
-		}
-
-		init()
-
-		return () => {
-			cleanup()
-		}
-	}, []) // Run once on mount
-
-	const handleSubmit = useCallback(
-		async (text: string) => {
-			if (!hostRef.current || !text.trim()) {
-				return
-			}
-
-			const trimmedText = text.trim()
-
-			if (trimmedText === "__CUSTOM__") {
-				return
-			}
-
-			// Check for CLI global action commands (e.g., /new).
-			if (trimmedText.startsWith("/")) {
-				const commandMatch = trimmedText.match(/^\/(\w+)(?:\s|$)/)
-
-				if (commandMatch && commandMatch[1]) {
-					const globalCommand = getGlobalCommand(commandMatch[1])
-
-					if (globalCommand?.action === "clearTask") {
-						// Reset CLI state and send clearTask to extension.
-						useCLIStore.getState().reset()
-						// Reset component-level refs to avoid stale message tracking.
-						seenMessageIds.current.clear()
-						firstTextMessageSkipped.current = false
-						hostRef.current.sendToExtension({ type: "clearTask" })
-						// Re-request state, commands and modes since reset() cleared them.
-						hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
-						hostRef.current.sendToExtension({ type: "requestCommands" })
-						hostRef.current.sendToExtension({ type: "requestModes" })
-						return
-					}
-				}
-			}
-
-			if (pendingAsk) {
-				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
-
-				hostRef.current.sendToExtension({
-					type: "askResponse",
-					askResponse: "messageResponse",
-					text: trimmedText,
-				})
-
-				setPendingAsk(null)
-				setShowCustomInput(false)
-				isTransitioningToCustomInput.current = false
-				setLoading(true)
-			} else if (!hasStartedTask) {
-				setHasStartedTask(true)
-				setLoading(true)
-				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
-
-				try {
-					await hostRef.current.runTask(trimmedText)
-				} catch (err) {
-					setError(err instanceof Error ? err.message : String(err))
-					setLoading(false)
-				}
-			} else {
-				if (isComplete) {
-					setComplete(false)
-				}
-
-				setLoading(true)
-				addMessage({ id: randomUUID(), role: "user", content: trimmedText })
-
-				hostRef.current.sendToExtension({
-					type: "askResponse",
-					askResponse: "messageResponse",
-					text: trimmedText,
-				})
-			}
-		},
-		[
-			pendingAsk,
-			hasStartedTask,
-			isComplete,
-			addMessage,
-			setPendingAsk,
-			setHasStartedTask,
-			setLoading,
-			setComplete,
-			setError,
-		],
-	)
-
-	// Handle approval (Y key)
-	const handleApprove = useCallback(() => {
-		if (!hostRef.current) {
-			return
-		}
-
-		hostRef.current.sendToExtension({ type: "askResponse", askResponse: "yesButtonClicked" })
-		setPendingAsk(null)
-		setLoading(true)
-	}, [setPendingAsk, setLoading])
-
-	// Handle rejection (N key)
-	const handleReject = useCallback(() => {
-		if (!hostRef.current) {
-			return
-		}
-
-		hostRef.current.sendToExtension({ type: "askResponse", askResponse: "noButtonClicked" })
-		setPendingAsk(null)
-		setLoading(true)
-	}, [setPendingAsk, setLoading])
-
 	// Handle Y/N input for approval prompts
 	useInput((input) => {
 		if (pendingAsk && pendingAsk.type !== "followup") {
@@ -1212,105 +392,10 @@ function AppInner({
 		if (showFollowupSuggestions && countdownSeconds !== null) {
 			// Cancel countdown on any arrow key navigation
 			if (key.upArrow || key.downArrow) {
-				if (countdownIntervalRef.current) {
-					clearInterval(countdownIntervalRef.current)
-					countdownIntervalRef.current = null
-				}
-				setCountdownSeconds(null)
+				cancelCountdown()
 			}
 		}
 	})
-
-	// Handle picker state changes from AutocompleteInput
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const handlePickerStateChange = useCallback((state: AutocompletePickerState<any>) => setPickerState(state), [])
-
-	// Handle item selection from external PickerSelect
-	const handlePickerSelect = useCallback(
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(item: any) => {
-			// Check if this is a mode selection
-			if (pickerState.activeTrigger?.id === "mode" && item && typeof item === "object" && "slug" in item) {
-				const modeItem = item as ModeResult
-
-				// Send mode change message to extension
-				if (hostRef.current) {
-					hostRef.current.sendToExtension({ type: "switchMode", mode: modeItem.slug })
-				}
-
-				// Close the picker
-				autocompleteRef.current?.closePicker()
-				followupAutocompleteRef.current?.closePicker()
-			}
-			// Check if this is a history item selection
-			else if (pickerState.activeTrigger?.id === "history" && item && typeof item === "object" && "id" in item) {
-				const historyItem = item as HistoryResult
-
-				// Don't allow task switching while a task is in progress (loading)
-				if (isLoading) {
-					showInfo("Cannot switch tasks while task is in progress", 2000)
-					// Close the picker
-					autocompleteRef.current?.closePicker()
-					followupAutocompleteRef.current?.closePicker()
-					return
-				}
-
-				// If selecting the same task that's already loaded, just close the picker
-				if (historyItem.id === currentTaskId) {
-					autocompleteRef.current?.closePicker()
-					followupAutocompleteRef.current?.closePicker()
-					return
-				}
-
-				// Send showTaskWithId message to extension to resume the task
-				if (hostRef.current) {
-					// Use selective reset that preserves global state (taskHistory, modes, commands)
-					useCLIStore.getState().resetForTaskSwitch()
-					// Set the resuming flag so message handlers know we're resuming
-					// This prevents skipping the first text message (which is historical)
-					useCLIStore.getState().setIsResumingTask(true)
-					// Track which task we're switching to
-					setCurrentTaskId(historyItem.id)
-					// Reset refs to avoid stale state across task switches
-					seenMessageIds.current.clear()
-					firstTextMessageSkipped.current = false
-
-					// Send message to resume the selected task
-					// This triggers createTaskWithHistoryItem -> postStateToWebview
-					// which includes clineMessages and handles mode restoration
-					hostRef.current.sendToExtension({ type: "showTaskWithId", text: historyItem.id })
-
-					// DON'T send these redundant requests - they cause race conditions:
-					// - showTaskWithId already triggers postStateToWebview which includes everything
-					// - resetForTaskSwitch preserves taskHistory, modes, and commands
-					// hostRef.current.sendToExtension({ type: "webviewDidLaunch" })
-					// hostRef.current.sendToExtension({ type: "requestCommands" })
-					// hostRef.current.sendToExtension({ type: "requestModes" })
-				}
-
-				// Close the picker
-				autocompleteRef.current?.closePicker()
-				followupAutocompleteRef.current?.closePicker()
-			} else {
-				// Handle other item selections normally
-				autocompleteRef.current?.handleItemSelect(item)
-				followupAutocompleteRef.current?.handleItemSelect(item)
-			}
-		},
-		[pickerState.activeTrigger, isLoading, showInfo, currentTaskId, setCurrentTaskId],
-	)
-
-	// Handle picker close from external PickerSelect
-	const handlePickerClose = useCallback(() => {
-		autocompleteRef.current?.closePicker()
-		followupAutocompleteRef.current?.closePicker()
-	}, [])
-
-	// Handle picker index change from external PickerSelect
-	const handlePickerIndexChange = useCallback((index: number) => {
-		autocompleteRef.current?.handleIndexChange(index)
-		followupAutocompleteRef.current?.handleIndexChange(index)
-	}, [])
 
 	// Error display
 	if (error) {
@@ -1411,18 +496,13 @@ function AppInner({
 									]}
 									onChange={(value) => {
 										if (!value || typeof value !== "string") return
-										if (showCustomInput || isTransitioningToCustomInput.current) return
+										if (showCustomInput || isTransitioningToCustomInput) return
 
 										if (value === "__CUSTOM__") {
-											// Clear countdown timer synchronously BEFORE state update
-											// This prevents race condition where interval fires before useEffect cleanup
-											if (countdownIntervalRef.current) {
-												clearInterval(countdownIntervalRef.current)
-												countdownIntervalRef.current = null
-											}
-											setCountdownSeconds(null)
-											isTransitioningToCustomInput.current = true
-											setShowCustomInput(true)
+											// Clear countdown timer and switch to custom input
+											cancelCountdown()
+											setIsTransitioningToCustomInput(true)
+											useUIStateStore.getState().setShowCustomInput(true)
 										} else if (value.trim()) {
 											handleSubmit(value)
 										}
@@ -1445,8 +525,8 @@ function AppInner({
 									onSubmit={(text: string) => {
 										if (text && text.trim()) {
 											handleSubmit(text)
-											setShowCustomInput(false)
-											isTransitioningToCustomInput.current = false
+											useUIStateStore.getState().setShowCustomInput(false)
+											setIsTransitioningToCustomInput(false)
 										}
 									}}
 									isActive={true}
@@ -1539,347 +619,4 @@ export function App(props: TUIAppProps) {
 			<AppInner {...props} />
 		</TerminalSizeProvider>
 	)
-}
-
-/**
- * Extract structured ToolData from parsed tool JSON
- * This provides rich data for tool-specific renderers
- */
-function extractToolData(toolInfo: Record<string, unknown>): ToolData {
-	const toolName = (toolInfo.tool as string) || "unknown"
-
-	// Base tool data with common fields
-	const toolData: ToolData = {
-		tool: toolName,
-		path: toolInfo.path as string | undefined,
-		isOutsideWorkspace: toolInfo.isOutsideWorkspace as boolean | undefined,
-		isProtected: toolInfo.isProtected as boolean | undefined,
-		content: toolInfo.content as string | undefined,
-		reason: toolInfo.reason as string | undefined,
-	}
-
-	// Extract diff-related fields
-	if (toolInfo.diff !== undefined) {
-		toolData.diff = toolInfo.diff as string
-	}
-	if (toolInfo.diffStats !== undefined) {
-		const stats = toolInfo.diffStats as { added?: number; removed?: number }
-		if (typeof stats.added === "number" && typeof stats.removed === "number") {
-			toolData.diffStats = { added: stats.added, removed: stats.removed }
-		}
-	}
-
-	// Extract search-related fields
-	if (toolInfo.regex !== undefined) {
-		toolData.regex = toolInfo.regex as string
-	}
-	if (toolInfo.filePattern !== undefined) {
-		toolData.filePattern = toolInfo.filePattern as string
-	}
-	if (toolInfo.query !== undefined) {
-		toolData.query = toolInfo.query as string
-	}
-
-	// Extract mode-related fields
-	if (toolInfo.mode !== undefined) {
-		toolData.mode = toolInfo.mode as string
-	}
-	if (toolInfo.mode_slug !== undefined) {
-		toolData.mode = toolInfo.mode_slug as string
-	}
-
-	// Extract command-related fields
-	if (toolInfo.command !== undefined) {
-		toolData.command = toolInfo.command as string
-	}
-	if (toolInfo.output !== undefined) {
-		toolData.output = toolInfo.output as string
-	}
-
-	// Extract browser-related fields
-	if (toolInfo.action !== undefined) {
-		toolData.action = toolInfo.action as string
-	}
-	if (toolInfo.url !== undefined) {
-		toolData.url = toolInfo.url as string
-	}
-	if (toolInfo.coordinate !== undefined) {
-		toolData.coordinate = toolInfo.coordinate as string
-	}
-
-	// Extract batch file operations
-	if (Array.isArray(toolInfo.files)) {
-		toolData.batchFiles = (toolInfo.files as Array<Record<string, unknown>>).map((f) => ({
-			path: (f.path as string) || "",
-			lineSnippet: f.lineSnippet as string | undefined,
-			isOutsideWorkspace: f.isOutsideWorkspace as boolean | undefined,
-			key: f.key as string | undefined,
-			content: f.content as string | undefined,
-		}))
-	}
-
-	// Extract batch diff operations
-	if (Array.isArray(toolInfo.batchDiffs)) {
-		toolData.batchDiffs = (toolInfo.batchDiffs as Array<Record<string, unknown>>).map((d) => ({
-			path: (d.path as string) || "",
-			changeCount: d.changeCount as number | undefined,
-			key: d.key as string | undefined,
-			content: d.content as string | undefined,
-			diffStats: d.diffStats as { added: number; removed: number } | undefined,
-			diffs: d.diffs as Array<{ content: string; startLine?: number }> | undefined,
-		}))
-	}
-
-	// Extract question/completion fields
-	if (toolInfo.question !== undefined) {
-		toolData.question = toolInfo.question as string
-	}
-	if (toolInfo.result !== undefined) {
-		toolData.result = toolInfo.result as string
-	}
-
-	// Extract additional display hints
-	if (toolInfo.lineNumber !== undefined) {
-		toolData.lineNumber = toolInfo.lineNumber as number
-	}
-	if (toolInfo.additionalFileCount !== undefined) {
-		toolData.additionalFileCount = toolInfo.additionalFileCount as number
-	}
-
-	return toolData
-}
-
-/**
- * Format tool output for display (used in the message body, header shows tool name separately)
- */
-function formatToolOutput(toolInfo: Record<string, unknown>): string {
-	const toolName = (toolInfo.tool as string) || "unknown"
-
-	switch (toolName) {
-		case "switchMode": {
-			const mode = (toolInfo.mode as string) || "unknown"
-			const reason = toolInfo.reason as string
-			return `→ ${mode} mode${reason ? `\n  ${reason}` : ""}`
-		}
-
-		case "switch_mode": {
-			const mode = (toolInfo.mode_slug as string) || (toolInfo.mode as string) || "unknown"
-			const reason = toolInfo.reason as string
-			return `→ ${mode} mode${reason ? `\n  ${reason}` : ""}`
-		}
-
-		case "execute_command": {
-			const command = toolInfo.command as string
-			return `$ ${command || "(no command)"}`
-		}
-
-		case "read_file": {
-			const files = toolInfo.files as Array<{ path: string }> | undefined
-			const path = toolInfo.path as string
-			if (files && files.length > 0) {
-				return files.map((f) => `📄 ${f.path}`).join("\n")
-			}
-			return `📄 ${path || "(no path)"}`
-		}
-
-		case "write_to_file": {
-			const writePath = toolInfo.path as string
-			return `📝 ${writePath || "(no path)"}`
-		}
-
-		case "apply_diff": {
-			const diffPath = toolInfo.path as string
-			return `✏️ ${diffPath || "(no path)"}`
-		}
-
-		case "search_files": {
-			const searchPath = toolInfo.path as string
-			const regex = toolInfo.regex as string
-			return `🔍 "${regex}" in ${searchPath || "."}`
-		}
-
-		case "list_files": {
-			const listPath = toolInfo.path as string
-			const recursive = toolInfo.recursive as boolean
-			return `📁 ${listPath || "."}${recursive ? " (recursive)" : ""}`
-		}
-
-		case "browser_action": {
-			const action = toolInfo.action as string
-			const url = toolInfo.url as string
-			return `🌐 ${action || "action"}${url ? `: ${url}` : ""}`
-		}
-
-		case "attempt_completion": {
-			const result = toolInfo.result as string
-			if (result) {
-				const truncated = result.length > 100 ? result.substring(0, 100) + "..." : result
-				return `✅ ${truncated}`
-			}
-			return "✅ Task completed"
-		}
-
-		case "ask_followup_question": {
-			const question = toolInfo.question as string
-			return `❓ ${question || "(no question)"}`
-		}
-
-		case "new_task": {
-			const taskMode = toolInfo.mode as string
-			return `📋 Creating subtask${taskMode ? ` in ${taskMode} mode` : ""}`
-		}
-
-		case "update_todo_list":
-		case "updateTodoList": {
-			// Special marker - actual rendering is handled by TodoChangeDisplay component
-			return "☑ TODO list updated"
-		}
-
-		default: {
-			const params = Object.entries(toolInfo)
-				.filter(([key]) => key !== "tool")
-				.map(([key, value]) => {
-					const displayValue = typeof value === "string" ? value : JSON.stringify(value)
-					const truncated = displayValue.length > 100 ? displayValue.substring(0, 100) + "..." : displayValue
-					return `${key}: ${truncated}`
-				})
-				.join("\n")
-			return params || "(no parameters)"
-		}
-	}
-}
-
-/**
- * Format tool ask message for user approval prompt
- */
-function formatToolAskMessage(toolInfo: Record<string, unknown>): string {
-	const toolName = (toolInfo.tool as string) || "unknown"
-
-	switch (toolName) {
-		case "switchMode":
-		case "switch_mode": {
-			const mode = (toolInfo.mode as string) || (toolInfo.mode_slug as string) || "unknown"
-			const reason = toolInfo.reason as string
-			return `Switch to ${mode} mode?${reason ? `\nReason: ${reason}` : ""}`
-		}
-
-		case "execute_command": {
-			const command = toolInfo.command as string
-			return `Run command?\n$ ${command || "(no command)"}`
-		}
-
-		case "read_file": {
-			const files = toolInfo.files as Array<{ path: string }> | undefined
-			const path = toolInfo.path as string
-			if (files && files.length > 0) {
-				return `Read ${files.length} file(s)?\n${files.map((f) => `  ${f.path}`).join("\n")}`
-			}
-			return `Read file: ${path || "(no path)"}`
-		}
-
-		case "write_to_file": {
-			const writePath = toolInfo.path as string
-			return `Write to file: ${writePath || "(no path)"}`
-		}
-
-		case "apply_diff": {
-			const diffPath = toolInfo.path as string
-			return `Apply changes to: ${diffPath || "(no path)"}`
-		}
-
-		case "browser_action": {
-			const action = toolInfo.action as string
-			const url = toolInfo.url as string
-			return `Browser: ${action || "action"}${url ? ` - ${url}` : ""}`
-		}
-
-		default: {
-			const params = Object.entries(toolInfo)
-				.filter(([key]) => key !== "tool")
-				.map(([key, value]) => {
-					const displayValue = typeof value === "string" ? value : JSON.stringify(value)
-					const truncated = displayValue.length > 80 ? displayValue.substring(0, 80) + "..." : displayValue
-					return `  ${key}: ${truncated}`
-				})
-				.join("\n")
-			return `${toolName}${params ? `\n${params}` : ""}`
-		}
-	}
-}
-
-/**
- * Parse TODO items from tool info
- * Handles both array format and markdown checklist string format
- */
-function parseTodosFromToolInfo(toolInfo: Record<string, unknown>): TodoItem[] | null {
-	// Try to get todos directly as an array
-	const todosArray = toolInfo.todos as unknown[] | undefined
-	if (Array.isArray(todosArray)) {
-		return todosArray
-			.map((item, index) => {
-				if (typeof item === "object" && item !== null) {
-					const todo = item as Record<string, unknown>
-					return {
-						id: (todo.id as string) || `todo-${index}`,
-						content: (todo.content as string) || "",
-						status: ((todo.status as string) || "pending") as TodoItem["status"],
-					}
-				}
-				return null
-			})
-			.filter((item): item is TodoItem => item !== null)
-	}
-
-	// Try to parse markdown checklist format from todos string
-	const todosString = toolInfo.todos as string | undefined
-	if (typeof todosString === "string") {
-		return parseMarkdownChecklist(todosString)
-	}
-
-	return null
-}
-
-/**
- * Parse a markdown checklist string into TodoItem array
- * Format:
- *   [ ] pending item
- *   [-] in progress item
- *   [x] completed item
- */
-function parseMarkdownChecklist(markdown: string): TodoItem[] {
-	const lines = markdown.split("\n")
-	const todos: TodoItem[] = []
-
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i]
-
-		if (!line) {
-			continue
-		}
-
-		const trimmedLine = line.trim()
-
-		if (!trimmedLine) {
-			continue
-		}
-
-		// Match markdown checkbox patterns
-		const checkboxMatch = trimmedLine.match(/^\[([x\-\s])\]\s*(.+)$/i)
-
-		if (checkboxMatch) {
-			const statusChar = checkboxMatch[1] ?? " "
-			const content = checkboxMatch[2] ?? ""
-			let status: TodoItem["status"] = "pending"
-
-			if (statusChar.toLowerCase() === "x") {
-				status = "completed"
-			} else if (statusChar === "-") {
-				status = "in_progress"
-			}
-
-			todos.push({ id: `todo-${i}`, content: content.trim(), status })
-		}
-	}
-
-	return todos
 }
