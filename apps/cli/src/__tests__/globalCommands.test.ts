@@ -1,10 +1,9 @@
-import { describe, it, expect } from "vitest"
 import {
+	type GlobalCommand,
+	type GlobalCommandAction,
 	GLOBAL_COMMANDS,
 	getGlobalCommand,
 	getGlobalCommandsForAutocomplete,
-	type GlobalCommand,
-	type GlobalCommandAction,
 } from "../globalCommands.js"
 
 describe("globalCommands", () => {

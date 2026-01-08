@@ -1,9 +1,7 @@
 import { render } from "ink-testing-library"
-import { describe, it, expect, vi } from "vitest"
 
-import { createHistoryTrigger, toHistoryResult, type HistoryResult } from "./HistoryTrigger.js"
+import { createHistoryTrigger, toHistoryResult, type HistoryResult } from "../HistoryTrigger.js"
 
-// Sample history items for testing
 const mockHistoryItems: HistoryResult[] = [
 	{
 		key: "task-1",

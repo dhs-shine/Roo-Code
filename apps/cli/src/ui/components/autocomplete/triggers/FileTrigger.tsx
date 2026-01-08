@@ -4,16 +4,9 @@ import Fuzzysort from "fuzzysort"
 import { Icon } from "../../Icon.js"
 import type { AutocompleteTrigger, AutocompleteItem, TriggerDetectionResult } from "../types.js"
 
-/**
- * File search result type.
- * Extends AutocompleteItem with file-specific properties.
- */
 export interface FileResult extends AutocompleteItem {
-	/** File or folder path */
 	path: string
-	/** Whether this is a file or folder */
 	type: "file" | "folder"
-	/** Optional display label */
 	label?: string
 }
 

@@ -4,21 +4,38 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { EventEmitter } from "events"
 import { randomUUID } from "crypto"
 
-import type { ClineMessage, TodoItem, WebviewMessage } from "@roo-code/types"
-// Import only message-utils to avoid custom-tools dependencies (execa/child_process)
+import type { ExtensionMessage, ClineMessage, ClineAsk, ClineSay, TodoItem, WebviewMessage } from "@roo-code/types"
 import { consolidateTokenUsage, consolidateApiRequests, consolidateCommands } from "@roo-code/core/message-utils"
+
+import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
+import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
 import { toolInspectorLog, clearToolInspectorLog } from "../utils/toolInspectorLogger.js"
 import { arePathsEqual } from "../utils/pathUtils.js"
+import { getContextWindow } from "../utils/getContextWindow.js"
+
+import type { AppProps, TUIMessage, PendingAsk, View, ToolData } from "./types.js"
+
+import * as theme from "./utils/theme.js"
+import { matchesGlobalSequence } from "./utils/globalInputSequences.js"
 
 import { useCLIStore } from "./store.js"
-import { getContextWindow } from "../utils/getContextWindow.js"
+
+import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
+import { useToast } from "./hooks/useToast.js"
+
 import Header from "./components/Header.js"
 import ChatHistoryItem from "./components/ChatHistoryItem.js"
 import LoadingText from "./components/LoadingText.js"
 import ToastDisplay from "./components/ToastDisplay.js"
 import TodoDisplay from "./components/TodoDisplay.js"
-import { useToast } from "./hooks/useToast.js"
 import {
+	type AutocompleteInputHandle,
+	type AutocompletePickerState,
+	type AutocompleteTrigger,
+	type HistoryResult,
+	type FileResult,
+	type SlashCommandResult,
+	type ModeResult,
 	AutocompleteInput,
 	PickerSelect,
 	createFileTrigger,
@@ -30,41 +47,12 @@ import {
 	toSlashCommandResult,
 	toModeResult,
 	toHistoryResult,
-	type AutocompleteInputHandle,
-	type AutocompletePickerState,
-	type AutocompleteTrigger,
-	type FileResult,
-	type SlashCommandResult as SlashCommandItem,
-	type ModeResult as ModeItem,
-	type HistoryResult,
 } from "./components/autocomplete/index.js"
 import { ScrollArea, useScrollToBottom } from "./components/ScrollArea.js"
 import ScrollIndicator from "./components/ScrollIndicator.js"
-import { TerminalSizeProvider, useTerminalSize } from "./hooks/TerminalSizeContext.js"
-import * as theme from "./utils/theme.js"
-import { matchesGlobalSequence } from "./utils/globalInputSequences.js"
-import { FOLLOWUP_TIMEOUT_SECONDS } from "../constants.js"
-import type {
-	AppProps,
-	TUIMessage,
-	PendingAsk,
-	SayType,
-	AskType,
-	View,
-	FileSearchResult,
-	SlashCommandResult,
-	ModeResult,
-	TaskHistoryItem,
-	ToolData,
-} from "./types.js"
-import { getGlobalCommand, getGlobalCommandsForAutocomplete } from "../globalCommands.js"
 
-// Layout constants
-const PICKER_HEIGHT = 10 // Max height for picker when open
+const PICKER_HEIGHT = 10
 
-/**
- * Interface for the extension host that the TUI interacts with
- */
 interface ExtensionHostInterface extends EventEmitter {
 	activate(): Promise<void>
 	runTask(prompt: string): Promise<void>
@@ -73,7 +61,7 @@ interface ExtensionHostInterface extends EventEmitter {
 }
 
 export interface TUIAppProps extends AppProps {
-	/** Extension host factory - allows dependency injection for testing */
+	/** Extension host factory - allows dependency injection for testing. */
 	createExtensionHost: (options: ExtensionHostOptions) => ExtensionHostInterface
 }
 
@@ -600,13 +588,14 @@ function AppInner({
 
 	// Map extension say messages to TUI messages
 	const handleSayMessage = useCallback(
-		(ts: number, say: SayType, text: string, partial: boolean) => {
+		(ts: number, say: ClineSay, text: string, partial: boolean) => {
 			const messageId = ts.toString()
 			const isResuming = useCLIStore.getState().isResumingTask
 
 			if (say === "checkpoint_saved") {
 				return
 			}
+
 			if (say === "api_req_started" && !verbose) {
 				return
 			}
@@ -639,65 +628,60 @@ function AppInner({
 				toolName = "execute_command"
 				toolDisplayName = "bash"
 				toolDisplayOutput = text
-				// Create toolData for command output, including the pending command if available
 				const trackedCommand = pendingCommandRef.current
 				toolInspectorLog("say:command_output", { ts, trackedCommand, outputLength: text?.length })
-				toolData = {
-					tool: "execute_command",
-					command: trackedCommand || undefined,
-					output: text,
-				}
-				// Clear the pending command after using it
+				toolData = { tool: "execute_command", command: trackedCommand || undefined, output: text }
 				pendingCommandRef.current = null
-			} else if (say === "tool") {
-				role = "tool"
-				try {
-					const toolInfo = JSON.parse(text)
+				// } else if (say === "tool") {
+				// 	role = "tool"
 
-					// Log tool payload for inspection
-					toolInspectorLog("say:tool", {
-						ts,
-						rawText: text,
-						parsedToolInfo: toolInfo,
-						partial,
-					})
+				// 	try {
+				// 		const toolInfo = JSON.parse(text)
 
-					toolName = toolInfo.tool
-					toolDisplayName = toolInfo.tool
-					toolDisplayOutput = formatToolOutput(toolInfo)
-					// Extract structured toolData for rich rendering
-					toolData = extractToolData(toolInfo)
+				// 		// Log tool payload for inspection
+				// 		toolInspectorLog("say:tool", {
+				// 			ts,
+				// 			rawText: text,
+				// 			parsedToolInfo: toolInfo,
+				// 			partial,
+				// 		})
 
-					// Special handling for update_todo_list tool
-					if (toolName === "update_todo_list" || toolName === "updateTodoList") {
-						const todos = parseTodosFromToolInfo(toolInfo)
-						if (todos && todos.length > 0) {
-							// Capture previous todos before updating
-							const prevTodos = [...currentTodos]
-							setTodos(todos)
+				// 		toolName = toolInfo.tool
+				// 		toolDisplayName = toolInfo.tool
+				// 		toolDisplayOutput = formatToolOutput(toolInfo)
+				// 		// Extract structured toolData for rich rendering
+				// 		toolData = extractToolData(toolInfo)
 
-							seenMessageIds.current.add(messageId)
+				// 		// Special handling for update_todo_list tool
+				// 		if (toolName === "update_todo_list" || toolName === "updateTodoList") {
+				// 			const todos = parseTodosFromToolInfo(toolInfo)
+				// 			if (todos && todos.length > 0) {
+				// 				// Capture previous todos before updating
+				// 				const prevTodos = [...currentTodos]
+				// 				setTodos(todos)
 
-							addMessage({
-								id: messageId,
-								role: "tool",
-								content: text || "",
-								toolName,
-								toolDisplayName,
-								toolDisplayOutput,
-								partial,
-								originalType: say,
-								todos,
-								previousTodos: prevTodos,
-								toolData,
-							})
-							return
-						}
-					}
-				} catch {
-					toolDisplayOutput = text
-				}
-			} else if (say === "reasoning" || say === "thinking") {
+				// 				seenMessageIds.current.add(messageId)
+
+				// 				addMessage({
+				// 					id: messageId,
+				// 					role: "tool",
+				// 					content: text || "",
+				// 					toolName,
+				// 					toolDisplayName,
+				// 					toolDisplayOutput,
+				// 					partial,
+				// 					originalType: say,
+				// 					todos,
+				// 					previousTodos: prevTodos,
+				// 					toolData,
+				// 				})
+				// 				return
+				// 			}
+				// 		}
+				// 	} catch {
+				// 		toolDisplayOutput = text
+				// 	}
+			} else if (say === "reasoning") {
 				role = "thinking"
 			}
 
@@ -720,7 +704,7 @@ function AppInner({
 
 	// Handle extension ask messages
 	const handleAskMessage = useCallback(
-		(ts: number, ask: AskType, text: string, partial: boolean) => {
+		(ts: number, ask: ClineAsk, text: string, partial: boolean) => {
 			const messageId = ts.toString()
 
 			if (partial) {
@@ -912,34 +896,38 @@ function AppInner({
 
 	// Handle extension messages
 	const handleExtensionMessage = useCallback(
-		(message: unknown) => {
-			const msg = message as Record<string, unknown>
-
+		(msg: ExtensionMessage) => {
 			if (msg.type === "state") {
-				const state = msg.state as Record<string, unknown>
-				if (!state) return
+				const state = msg.state
 
-				// Extract and update current mode from state
-				const newMode = state.mode as string | undefined
+				if (!state) {
+					return
+				}
+
+				// Extract and update current mode from state.
+				const newMode = state.mode
+
 				if (newMode) {
 					setCurrentMode(newMode)
 				}
 
-				// Extract and update task history from state
-				const newTaskHistory = state.taskHistory as TaskHistoryItem[] | undefined
+				// Extract and update task history from state.
+				const newTaskHistory = state.taskHistory
+
 				if (newTaskHistory && Array.isArray(newTaskHistory)) {
 					setTaskHistory(newTaskHistory)
 				}
 
-				const clineMessages = state.clineMessages as Array<Record<string, unknown>> | undefined
+				const clineMessages = state.clineMessages
+
 				if (clineMessages) {
 					for (const clineMsg of clineMessages) {
-						const ts = clineMsg.ts as number
-						const type = clineMsg.type as string
-						const say = clineMsg.say as SayType | undefined
-						const ask = clineMsg.ask as AskType | undefined
-						const text = (clineMsg.text as string) || ""
-						const partial = (clineMsg.partial as boolean) || false
+						const ts = clineMsg.ts
+						const type = clineMsg.type
+						const say = clineMsg.say
+						const ask = clineMsg.ask
+						const text = clineMsg.text || ""
+						const partial = clineMsg.partial || false
 
 						if (type === "say" && say) {
 							handleSayMessage(ts, say, text, partial)
@@ -948,12 +936,13 @@ function AppInner({
 						}
 					}
 
-					// Compute token usage metrics from clineMessages
-					// Skip first message (task prompt) as per webview UI pattern
+					// Compute token usage metrics from clineMessages.
+					// Skip first message (task prompt) as per webview UI pattern.
 					if (clineMessages.length > 1) {
 						const processed = consolidateApiRequests(
 							consolidateCommands(clineMessages.slice(1) as ClineMessage[]),
 						)
+
 						const metrics = consolidateTokenUsage(processed)
 						setTokenUsage(metrics)
 					}
@@ -965,15 +954,18 @@ function AppInner({
 					useCLIStore.getState().setIsResumingTask(false)
 				}
 			} else if (msg.type === "messageUpdated") {
-				const clineMessage = msg.clineMessage as Record<string, unknown>
-				if (!clineMessage) return
+				const clineMessage = msg.clineMessage
 
-				const ts = clineMessage.ts as number
-				const type = clineMessage.type as string
-				const say = clineMessage.say as SayType | undefined
-				const ask = clineMessage.ask as AskType | undefined
-				const text = (clineMessage.text as string) || ""
-				const partial = (clineMessage.partial as boolean) || false
+				if (!clineMessage) {
+					return
+				}
+
+				const ts = clineMessage.ts
+				const type = clineMessage.type
+				const say = clineMessage.say
+				const ask = clineMessage.ask
+				const text = clineMessage.text || ""
+				const partial = clineMessage.partial || false
 
 				if (type === "say" && say) {
 					handleSayMessage(ts, say, text, partial)
@@ -981,47 +973,14 @@ function AppInner({
 					handleAskMessage(ts, ask, text, partial)
 				}
 			} else if (msg.type === "fileSearchResults") {
-				const results = (msg.results as FileSearchResult[]) || []
-				setFileSearchResults(results)
+				setFileSearchResults((msg.results as FileResult[]) || [])
 			} else if (msg.type === "commands") {
-				const commands =
-					(msg.commands as Array<{
-						name: string
-						description?: string
-						argumentHint?: string
-						source: "global" | "project" | "built-in"
-					}>) || []
-				const slashCommands: SlashCommandResult[] = commands.map((cmd) => ({
-					name: cmd.name,
-					description: cmd.description,
-					argumentHint: cmd.argumentHint,
-					source: cmd.source,
-				}))
-				setAllSlashCommands(slashCommands)
+				setAllSlashCommands((msg.commands as SlashCommandResult[]) || [])
 			} else if (msg.type === "modes") {
-				const modes =
-					(msg.modes as Array<{
-						slug: string
-						name: string
-						description?: string
-					}>) || []
-				const modeResults: ModeResult[] = modes.map((mode) => ({
-					slug: mode.slug,
-					name: mode.name,
-					description: mode.description,
-				}))
-				setAvailableModes(modeResults)
+				setAvailableModes((msg.modes as ModeResult[]) || [])
 			} else if (msg.type === "routerModels") {
-				// Handle router models for context window lookup
-				const models = msg.models as Record<string, Record<string, { contextWindow?: number }>> | undefined
-				if (models) {
-					setRouterModels(models)
-				}
-			} else if (msg.type === "apiConfiguration") {
-				// Handle API configuration for model identification
-				const config = msg.configuration as unknown
-				if (config) {
-					setApiConfiguration(config as import("@roo-code/types").ProviderSettings)
+				if (msg.routerModels) {
+					setRouterModels(msg.routerModels)
 				}
 			}
 		},
@@ -1272,7 +1231,7 @@ function AppInner({
 		(item: any) => {
 			// Check if this is a mode selection
 			if (pickerState.activeTrigger?.id === "mode" && item && typeof item === "object" && "slug" in item) {
-				const modeItem = item as ModeItem
+				const modeItem = item as ModeResult
 
 				// Send mode change message to extension
 				if (hostRef.current) {
@@ -1402,7 +1361,7 @@ function AppInner({
 			return pickerState.activeTrigger.renderItem
 		}
 		// Default render
-		return (item: FileResult | SlashCommandItem, isSelected: boolean) => (
+		return (item: FileResult | SlashCommandResult, isSelected: boolean) => (
 			<Box paddingLeft={2}>
 				<Text color={isSelected ? "cyan" : undefined}>{item.key}</Text>
 			</Box>

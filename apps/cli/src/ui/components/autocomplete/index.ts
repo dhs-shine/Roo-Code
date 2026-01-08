@@ -28,39 +28,14 @@
  */
 
 // Main components
-export { AutocompleteInput, type AutocompleteInputProps, type AutocompleteInputHandle } from "./AutocompleteInput.js"
-export { PickerSelect, type PickerSelectProps } from "./PickerSelect.js"
+export { type AutocompleteInputProps, type AutocompleteInputHandle, AutocompleteInput } from "./AutocompleteInput.js"
+export { type PickerSelectProps, PickerSelect } from "./PickerSelect.js"
 
 // Hook
 export { useAutocompletePicker } from "./useAutocompletePicker.js"
 
 // Types
-export type {
-	AutocompleteItem,
-	AutocompleteTrigger,
-	AutocompletePickerState,
-	AutocompletePickerActions,
-	TriggerDetectionResult,
-} from "./types.js"
+export * from "./types.js"
 
 // Triggers
-export {
-	createFileTrigger,
-	toFileResult,
-	type FileResult,
-	type FileTriggerConfig,
-	createSlashCommandTrigger,
-	toSlashCommandResult,
-	type SlashCommandResult,
-	type SlashCommandTriggerConfig,
-	createModeTrigger,
-	toModeResult,
-	type ModeResult,
-	type ModeTriggerConfig,
-	createHelpTrigger,
-	type HelpShortcutResult,
-	createHistoryTrigger,
-	toHistoryResult,
-	type HistoryResult,
-	type HistoryTriggerConfig,
-} from "./triggers/index.js"
+export * from "./triggers/index.js"

@@ -1,9 +1,4 @@
-import { describe, it, expect, vi } from "vitest"
-import {
-	createSlashCommandTrigger,
-	toSlashCommandResult,
-	type SlashCommandResult,
-} from "../../ui/components/autocomplete/triggers/SlashCommandTrigger.js"
+import { type SlashCommandResult, createSlashCommandTrigger, toSlashCommandResult } from "../SlashCommandTrigger.js"
 
 describe("SlashCommandTrigger", () => {
 	describe("toSlashCommandResult", () => {

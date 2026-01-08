@@ -2,14 +2,8 @@ import { create } from "zustand"
 
 import type { TokenUsage, ProviderSettings, TodoItem } from "@roo-code/types"
 
-import type {
-	TUIMessage,
-	PendingAsk,
-	FileSearchResult,
-	SlashCommandResult,
-	ModeResult,
-	TaskHistoryItem,
-} from "./types.js"
+import type { TUIMessage, PendingAsk, TaskHistoryItem } from "./types.js"
+import type { FileResult, SlashCommandResult, ModeResult } from "./components/autocomplete/index.js"
 
 /**
  * RouterModels type for context window lookup.
@@ -40,7 +34,7 @@ interface CLIState {
 	isResumingTask: boolean
 
 	// Autocomplete data (from API/extension)
-	fileSearchResults: FileSearchResult[]
+	fileSearchResults: FileResult[]
 	allSlashCommands: SlashCommandResult[]
 	availableModes: ModeResult[]
 
@@ -83,7 +77,7 @@ interface CLIActions {
 	setIsResumingTask: (isResuming: boolean) => void
 
 	// Autocomplete data actions
-	setFileSearchResults: (results: FileSearchResult[]) => void
+	setFileSearchResults: (results: FileResult[]) => void
 	setAllSlashCommands: (commands: SlashCommandResult[]) => void
 	setAvailableModes: (modes: ModeResult[]) => void
 
@@ -210,9 +204,5 @@ export const useCLIStore = create<CLIState & CLIActions>((set) => ({
 	setTokenUsage: (usage) => set({ tokenUsage: usage }),
 	setRouterModels: (models) => set({ routerModels: models }),
 	setApiConfiguration: (config) => set({ apiConfiguration: config }),
-	setTodos: (todos) =>
-		set((state) => ({
-			previousTodos: state.currentTodos,
-			currentTodos: todos,
-		})),
+	setTodos: (todos) => set((state) => ({ previousTodos: state.currentTodos, currentTodos: todos })),
 }))

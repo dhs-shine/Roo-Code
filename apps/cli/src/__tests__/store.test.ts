@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from "vitest"
 import { useCLIStore } from "../ui/store.js"
 
 describe("useCLIStore", () => {
@@ -43,8 +42,8 @@ describe("useCLIStore", () => {
 			const store = useCLIStore.getState()
 			store.addMessage({ id: "1", role: "user", content: "test" })
 			store.setTaskHistory([{ id: "task1", task: "test", workspace: "/test", ts: Date.now() }])
-			store.setAvailableModes([{ slug: "code", name: "Code" }])
-			store.setAllSlashCommands([{ name: "test", source: "global" as const }])
+			store.setAvailableModes([{ key: "code", slug: "code", name: "Code" }])
+			store.setAllSlashCommands([{ key: "test", name: "test", source: "global" as const }])
 			store.setIsResumingTask(true)
 			store.setLoading(true)
 			store.setHasStartedTask(true)
@@ -115,8 +114,8 @@ describe("useCLIStore", () => {
 
 		it("should PRESERVE availableModes", () => {
 			const modes = [
-				{ slug: "code", name: "Code", description: "Code mode" },
-				{ slug: "architect", name: "Architect", description: "Architect mode" },
+				{ key: "code", slug: "code", name: "Code", description: "Code mode" },
+				{ key: "architect", slug: "architect", name: "Architect", description: "Architect mode" },
 			]
 			useCLIStore.getState().setAvailableModes(modes)
 
@@ -127,8 +126,8 @@ describe("useCLIStore", () => {
 
 		it("should PRESERVE allSlashCommands", () => {
 			const commands = [
-				{ name: "new", description: "New task", source: "global" as const },
-				{ name: "help", description: "Get help", source: "built-in" as const },
+				{ key: "new", name: "new", description: "New task", source: "global" as const },
+				{ key: "help", name: "help", description: "Get help", source: "built-in" as const },
 			]
 			useCLIStore.getState().setAllSlashCommands(commands)
 
@@ -139,8 +138,8 @@ describe("useCLIStore", () => {
 
 		it("should PRESERVE fileSearchResults", () => {
 			const results = [
-				{ path: "file1.ts", type: "file" as const },
-				{ path: "file2.ts", type: "file" as const },
+				{ key: "file1", path: "file1.ts", type: "file" as const },
+				{ key: "file2", path: "file2.ts", type: "file" as const },
 			]
 			useCLIStore.getState().setFileSearchResults(results)
 
@@ -184,8 +183,8 @@ describe("useCLIStore", () => {
 
 			// Step 1: Initial state with task history and modes from webviewDidLaunch
 			store().setTaskHistory([{ id: "task1", task: "Previous task", workspace: "/test", ts: Date.now() }])
-			store().setAvailableModes([{ slug: "code", name: "Code" }])
-			store().setAllSlashCommands([{ name: "new", source: "global" as const }])
+			store().setAvailableModes([{ key: "code", slug: "code", name: "Code" }])
+			store().setAllSlashCommands([{ key: "new", name: "new", source: "global" as const }])
 
 			// Step 2: User starts a new task
 			store().setHasStartedTask(true)
@@ -255,7 +254,7 @@ describe("useCLIStore", () => {
 			// Set up both task-specific and global state
 			store().addMessage({ id: "1", role: "user", content: "test" })
 			store().setTaskHistory([{ id: "t1", task: "task", workspace: "/", ts: Date.now() }])
-			store().setAvailableModes([{ slug: "code", name: "Code" }])
+			store().setAvailableModes([{ key: "code", slug: "code", name: "Code" }])
 
 			// Use resetForTaskSwitch
 			store().resetForTaskSwitch()

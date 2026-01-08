@@ -2,37 +2,19 @@ import { Box, Text } from "ink"
 import fuzzysort from "fuzzysort"
 
 import type { AutocompleteTrigger, AutocompleteItem, TriggerDetectionResult } from "../types.js"
+import { GlobalCommandAction } from "../../../../globalCommands.js"
 
-/**
- * Slash command result type.
- * Extends AutocompleteItem with command-specific properties.
- */
 export interface SlashCommandResult extends AutocompleteItem {
-	/** Command name (without the leading /) */
 	name: string
-	/** Optional description of what the command does */
 	description?: string
-	/** Optional hint about command arguments */
 	argumentHint?: string
-	/** Source of the command */
 	source: "global" | "project" | "built-in"
-	/** Action to trigger for CLI global commands (only present for action commands) */
-	action?: string
+	/** Action to trigger for CLI global commands (e.g., clearTask for /new) */
+	action?: GlobalCommandAction
 }
 
-/**
- * Props for creating a slash command trigger
- */
 export interface SlashCommandTriggerConfig {
-	/**
-	 * Get all available commands for filtering.
-	 * Commands are filtered locally using fuzzy search.
-	 */
 	getCommands: () => SlashCommandResult[]
-	/**
-	 * Maximum number of results to show.
-	 * @default 20
-	 */
 	maxResults?: number
 }
 

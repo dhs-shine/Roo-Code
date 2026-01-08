@@ -3,34 +3,15 @@ import fuzzysort from "fuzzysort"
 
 import type { AutocompleteTrigger, AutocompleteItem, TriggerDetectionResult } from "../types.js"
 
-/**
- * Mode result type.
- * Extends AutocompleteItem with mode-specific properties.
- */
 export interface ModeResult extends AutocompleteItem {
-	/** Mode slug (e.g., "code", "architect") */
 	slug: string
-	/** Mode display name */
 	name: string
-	/** Optional description of the mode */
 	description?: string
-	/** Optional icon for the mode */
 	icon?: string
 }
 
-/**
- * Props for creating a mode trigger
- */
 export interface ModeTriggerConfig {
-	/**
-	 * Get all available modes for filtering.
-	 * Modes are filtered locally using fuzzy search.
-	 */
 	getModes: () => ModeResult[]
-	/**
-	 * Maximum number of results to show.
-	 * @default 20
-	 */
 	maxResults?: number
 }
 
@@ -114,7 +95,7 @@ export function createModeTrigger(config: ModeTriggerConfig): AutocompleteTrigge
 }
 
 /**
- * Convert external mode data to ModeResult.
+ * Convert external mode data to ModeTriggerResult.
  * Use this to adapt modes from the store to the trigger's expected type.
  */
 export function toModeResult(mode: { slug: string; name: string; description?: string; icon?: string }): ModeResult {

@@ -1,9 +1,4 @@
-import { describe, it, expect } from "vitest"
-import {
-	createModeTrigger,
-	toModeResult,
-	type ModeResult,
-} from "../../ui/components/autocomplete/triggers/ModeTrigger.js"
+import { type ModeResult, createModeTrigger, toModeResult } from "../ModeTrigger.js"
 
 describe("ModeTrigger", () => {
 	const testModes: ModeResult[] = [

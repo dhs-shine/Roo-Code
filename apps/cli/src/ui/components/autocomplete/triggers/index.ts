@@ -1,23 +1,19 @@
-/**
- * Autocomplete triggers for different trigger patterns.
- */
-
-export { createFileTrigger, toFileResult, type FileResult, type FileTriggerConfig } from "./FileTrigger.js"
+export { type FileResult, type FileTriggerConfig, createFileTrigger, toFileResult } from "./FileTrigger.js"
 
 export {
-	createSlashCommandTrigger,
-	toSlashCommandResult,
 	type SlashCommandResult,
 	type SlashCommandTriggerConfig,
+	createSlashCommandTrigger,
+	toSlashCommandResult,
 } from "./SlashCommandTrigger.js"
 
-export { createModeTrigger, toModeResult, type ModeResult, type ModeTriggerConfig } from "./ModeTrigger.js"
+export { type ModeResult, type ModeTriggerConfig, createModeTrigger, toModeResult } from "./ModeTrigger.js"
 
-export { createHelpTrigger, type HelpShortcutResult } from "./HelpTrigger.js"
+export { type HelpShortcutResult, createHelpTrigger } from "./HelpTrigger.js"
 
 export {
-	createHistoryTrigger,
-	toHistoryResult,
 	type HistoryResult,
 	type HistoryTriggerConfig,
+	createHistoryTrigger,
+	toHistoryResult,
 } from "./HistoryTrigger.js"

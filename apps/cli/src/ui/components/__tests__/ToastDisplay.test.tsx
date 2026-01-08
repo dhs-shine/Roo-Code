@@ -1,5 +1,4 @@
 import { render } from "ink-testing-library"
-import { describe, it, expect } from "vitest"
 
 import type { Toast } from "../../hooks/useToast.js"
 import ToastDisplay from "../ToastDisplay.js"
