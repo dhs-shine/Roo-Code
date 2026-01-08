@@ -135,9 +135,9 @@ describe("Icon", () => {
 			process.env.ROOCODE_NERD_FONT = "1"
 			resetNerdFontCache()
 
-			// Nerd Font icons are surrogate pairs (length 2)
-			expect(getIconChar("folder").length).toBe(2)
-			expect(getIconChar("file").length).toBe(2)
+			// Nerd Font icons are single characters (length 1)
+			expect(getIconChar("folder").length).toBe(1)
+			expect(getIconChar("file").length).toBe(1)
 		})
 
 		it("should respect useNerdFont override", () => {
@@ -151,7 +151,7 @@ describe("Icon", () => {
 			resetNerdFontCache()
 
 			// Force Nerd Font
-			expect(getIconChar("folder", true).length).toBe(2)
+			expect(getIconChar("folder", true).length).toBe(1)
 		})
 
 		it("should return empty string for unknown icon", () => {

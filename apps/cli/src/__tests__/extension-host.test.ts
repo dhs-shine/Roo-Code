@@ -569,7 +569,7 @@ describe("ExtensionHost", () => {
 
 			callPrivate(host, "handleAskMessage", 123, "tool", toolInfo, false)
 
-			expect(outputSpy).toHaveBeenCalledWith("\n[tool] write_file")
+			expect(outputSpy).toHaveBeenCalledWith("\n[Tool Request] write_file")
 			expect(outputSpy).toHaveBeenCalledWith("  path: /test/file.txt")
 		})
 
@@ -582,7 +582,7 @@ describe("ExtensionHost", () => {
 			callPrivate(host, "handleAskMessage", 123, "tool", toolInfo, false)
 
 			// Content is now shown (all tool parameters are displayed)
-			expect(outputSpy).toHaveBeenCalledWith("\n[tool] write_file")
+			expect(outputSpy).toHaveBeenCalledWith("\n[Tool Request] write_file")
 			expect(outputSpy).toHaveBeenCalledWith(
 				"  content: This is the content that will be written to the file. It might be long.",
 			)
@@ -591,7 +591,7 @@ describe("ExtensionHost", () => {
 		it("should handle tool type with invalid JSON in non-interactive mode", () => {
 			callPrivate(host, "handleAskMessage", 123, "tool", "not json", false)
 
-			expect(outputSpy).toHaveBeenCalledWith("\n[tool]", "not json")
+			expect(outputSpy).toHaveBeenCalledWith("\n[Tool Request] unknown")
 		})
 
 		it("should not display duplicate messages for same ts", () => {
