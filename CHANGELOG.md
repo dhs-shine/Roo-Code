@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.39.0
+
+### Minor Changes
+
+- ![3.39.0 Release - CLI Support & Developer Experience](/releases/3.39.0-release.png)
+
 ## [3.38.3] - 2026-01-03
 
 - Feat: Add option in Context settings to recursively load `.roo/rules` and `AGENTS.md` from subdirectories (PR #10446 by @mrubens)
