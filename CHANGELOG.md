@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.39.2
+
+### Patch Changes
+
+-   - Fix: Ensure all tools have consistent strict mode values for Cerebras compatibility (#10334 by @brianboysen51, PR #10589 by @app/roomote)
+
 ## [3.39.1] - 2026-01-08
 
 - Fix: Stabilize file paths during native tool call streaming to prevent path corruption (PR #10555 by @daniel-lxs)
