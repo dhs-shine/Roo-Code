@@ -80,6 +80,7 @@ export {
 	type FileStat,
 	type Terminal,
 	type CancellationToken,
+	type IExtensionHost,
 } from "./vscode.js"
 
 // Export utilities
