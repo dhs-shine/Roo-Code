@@ -8,11 +8,12 @@
  * 4. Wiring up managers for output, prompting, and ask handling
  */
 
-import { EventEmitter } from "events"
 import { createRequire } from "module"
 import path from "path"
 import { fileURLToPath } from "url"
 import fs from "fs"
+import { EventEmitter } from "events"
+
 import pWaitFor from "p-wait-for"
 
 import type {
@@ -22,7 +23,7 @@ import type {
 	RooCodeSettings,
 	WebviewMessage,
 } from "@roo-code/types"
-import { createVSCodeAPI, IExtensionHost, setRuntimeConfigValues } from "@roo-code/vscode-shim"
+import { createVSCodeAPI, IExtensionHost, ExtensionHostEventMap, setRuntimeConfigValues } from "@roo-code/vscode-shim"
 import { DebugLogger } from "@roo-code/core/cli"
 
 import type { SupportedProvider } from "@/types/index.js"
@@ -30,7 +31,7 @@ import type { User } from "@/lib/sdk/index.js"
 import { getProviderSettings } from "@/lib/utils/provider.js"
 import { createEphemeralStorageDir } from "@/lib/storage/index.js"
 
-import type { AgentStateChangeEvent, WaitingForInputEvent, TaskCompletedEvent } from "./events.js"
+import type { WaitingForInputEvent, TaskCompletedEvent } from "./events.js"
 import type { AgentStateInfo } from "./agent-state.js"
 import { ExtensionClient } from "./extension-client.js"
 import { OutputManager } from "./output-manager.js"
@@ -83,16 +84,15 @@ interface WebviewViewProvider {
 	resolveWebviewView?(webviewView: unknown, context: unknown, token: unknown): void | Promise<void>
 }
 
-export interface ExtensionHostInterface {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	on(event: string, handler: (...args: any[]) => void): void
+export interface ExtensionHostInterface extends IExtensionHost<ExtensionHostEventMap> {
+	client: ExtensionClient
 	activate(): Promise<void>
 	runTask(prompt: string): Promise<void>
 	sendToExtension(message: WebviewMessage): void
 	dispose(): Promise<void>
 }
 
-export class ExtensionHost extends EventEmitter implements IExtensionHost {
+export class ExtensionHost extends EventEmitter implements ExtensionHostInterface {
 	// Extension lifecycle.
 	private vscode: ReturnType<typeof createVSCodeAPI> | null = null
 	private extensionModule: ExtensionModule | null = null
@@ -124,7 +124,7 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 	 * ExtensionClient: Single source of truth for agent loop state.
 	 * Handles message processing and state detection.
 	 */
-	private client: ExtensionClient
+	public readonly client: ExtensionClient
 
 	/**
 	 * OutputManager: Handles all CLI output and streaming.
@@ -234,11 +234,6 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 	 * The client emits events, managers handle them.
 	 */
 	private setupClientEventHandlers(): void {
-		// Forward state changes for external consumers.
-		this.client.on("stateChange", (event: AgentStateChangeEvent) => {
-			this.emit("agentStateChange", event)
-		})
-
 		// Handle new messages - delegate to OutputManager.
 		this.client.on("message", (msg: ClineMessage) => {
 			this.logMessageDebug(msg, "new")
@@ -253,22 +248,16 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 
 		// Handle waiting for input - delegate to AskDispatcher.
 		this.client.on("waitingForInput", (event: WaitingForInputEvent) => {
-			this.emit("agentWaitingForInput", event)
 			this.askDispatcher.handleAsk(event.message)
 		})
 
 		// Handle task completion.
 		this.client.on("taskCompleted", (event: TaskCompletedEvent) => {
-			this.emit("agentTaskCompleted", event)
-
 			// Output completion message via OutputManager.
 			// Note: completion_result is an "ask" type, not a "say" type.
 			if (event.message && event.message.type === "ask" && event.message.ask === "completion_result") {
 				this.outputManager.outputCompletionResult(event.message.ts, event.message.text || "")
 			}
-
-			// Emit taskComplete for waitForCompletion.
-			this.emit("taskComplete")
 		})
 	}
 
@@ -454,9 +443,9 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 				resolve()
 			}
 
-			const errorHandler = (error: string) => {
+			const errorHandler = (error: Error) => {
 				cleanup()
-				reject(new Error(error))
+				reject(error)
 			}
 
 			const cleanup = () => {
@@ -465,8 +454,8 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 					timeoutId = null
 				}
 
-				this.off("taskComplete", completeHandler)
-				this.off("taskError", errorHandler)
+				this.client.off("taskCompleted", completeHandler)
+				this.client.off("error", errorHandler)
 			}
 
 			// Set timeout to prevent indefinite hanging.
@@ -477,8 +466,8 @@ export class ExtensionHost extends EventEmitter implements IExtensionHost {
 				)
 			}, timeoutMs)
 
-			this.once("taskComplete", completeHandler)
-			this.once("taskError", errorHandler)
+			this.client.once("taskCompleted", completeHandler)
+			this.client.once("error", errorHandler)
 		})
 	}
 

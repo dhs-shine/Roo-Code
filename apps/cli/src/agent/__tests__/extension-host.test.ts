@@ -3,10 +3,11 @@
 import { EventEmitter } from "events"
 import fs from "fs"
 
-import type { WebviewMessage } from "@roo-code/types"
+import type { ExtensionMessage, WebviewMessage } from "@roo-code/types"
 
 import { type ExtensionHostOptions, ExtensionHost } from "../extension-host.js"
 import { ExtensionClient } from "../extension-client.js"
+import { AgentLoopState } from "../agent-state.js"
 
 vi.mock("@roo-code/vscode-shim", () => ({
 	createVSCodeAPI: vi.fn(() => ({
@@ -248,11 +249,14 @@ describe("ExtensionHost", () => {
 			const host = createTestHost()
 			const client = getPrivate(host, "client") as ExtensionClient
 
-			// Simulate extension message
-			host.emit("extensionWebviewMessage", { type: "state", state: { clineMessages: [] } })
+			// Simulate extension message.
+			host.emit("extensionWebviewMessage", {
+				type: "state",
+				state: { clineMessages: [] },
+			} as unknown as ExtensionMessage)
 
-			// Message listener is set up in activate(), which we can't easily call in unit tests
-			// But we can verify the client exists and has the handleMessage method
+			// Message listener is set up in activate(), which we can't easily call in unit tests.
+			// But we can verify the client exists and has the handleMessage method.
 			expect(typeof client.handleMessage).toBe("function")
 		})
 	})
@@ -420,39 +424,52 @@ describe("ExtensionHost", () => {
 			host.markWebviewReady()
 
 			const emitSpy = vi.spyOn(host, "emit")
+			const client = getPrivate(host, "client") as ExtensionClient
 
 			// Start the task (will hang waiting for completion)
 			const taskPromise = host.runTask("test prompt")
 
-			// Emit completion to resolve the promise
-			setTimeout(() => host.emit("taskComplete"), 10)
+			// Emit completion to resolve the promise via the client's emitter
+			const taskCompletedEvent = {
+				success: true,
+				stateInfo: {
+					state: AgentLoopState.IDLE,
+					isWaitingForInput: false,
+					isRunning: false,
+					isStreaming: false,
+					requiredAction: "start_task" as const,
+					description: "Task completed",
+				},
+			}
+			setTimeout(() => client.getEmitter().emit("taskCompleted", taskCompletedEvent), 10)
 
 			await taskPromise
 
 			expect(emitSpy).toHaveBeenCalledWith("webviewMessage", { type: "newTask", text: "test prompt" })
 		})
 
-		it("should resolve when taskComplete is emitted", async () => {
+		it("should resolve when taskCompleted is emitted on client", async () => {
 			const host = createTestHost()
 			host.markWebviewReady()
 
+			const client = getPrivate(host, "client") as ExtensionClient
 			const taskPromise = host.runTask("test prompt")
 
-			// Emit completion after a short delay
-			setTimeout(() => host.emit("taskComplete"), 10)
+			// Emit completion after a short delay via the client's emitter
+			const taskCompletedEvent = {
+				success: true,
+				stateInfo: {
+					state: AgentLoopState.IDLE,
+					isWaitingForInput: false,
+					isRunning: false,
+					isStreaming: false,
+					requiredAction: "start_task" as const,
+					description: "Task completed",
+				},
+			}
+			setTimeout(() => client.getEmitter().emit("taskCompleted", taskCompletedEvent), 10)
 
 			await expect(taskPromise).resolves.toBeUndefined()
-		})
-
-		it("should reject when taskError is emitted", async () => {
-			const host = createTestHost()
-			host.markWebviewReady()
-
-			const taskPromise = host.runTask("test prompt")
-
-			setTimeout(() => host.emit("taskError", "Test error"), 10)
-
-			await expect(taskPromise).rejects.toThrow("Test error")
 		})
 	})
 

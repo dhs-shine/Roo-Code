@@ -80,9 +80,9 @@ export function useExtensionHost({
 				hostRef.current = host
 				isReadyRef.current = true
 
-				host.on("extensionWebviewMessage", onExtensionMessage)
+				host.on("extensionWebviewMessage", (msg) => onExtensionMessage(msg as ExtensionMessage))
 
-				host.on("taskComplete", async () => {
+				host.client.on("taskCompleted", async () => {
 					setComplete(true)
 					setLoading(false)
 
@@ -93,8 +93,8 @@ export function useExtensionHost({
 					}
 				})
 
-				host.on("taskError", (err: string) => {
-					setError(err)
+				host.client.on("error", (err: Error) => {
+					setError(err.message)
 					setLoading(false)
 				})
 

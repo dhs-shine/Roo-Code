@@ -81,6 +81,8 @@ export {
 	type Terminal,
 	type CancellationToken,
 	type IExtensionHost,
+	type ExtensionHostEventMap,
+	type ExtensionHostEventName,
 } from "./vscode.js"
 
 // Export utilities

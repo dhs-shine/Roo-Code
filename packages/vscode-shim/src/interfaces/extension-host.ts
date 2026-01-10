@@ -9,12 +9,32 @@
 import type { WebviewViewProvider } from "./webview.js"
 
 /**
+ * Core event map for ExtensionHost communication.
+ * Maps event names to their payload types.
+ *
+ * - "extensionWebviewMessage": Messages from the extension to the webview/CLI
+ * - "webviewMessage": Messages from the webview/CLI to the extension
+ */
+export interface ExtensionHostEventMap {
+	extensionWebviewMessage: unknown
+	webviewMessage: unknown
+}
+
+/**
+ * Allowed event names for ExtensionHost communication.
+ */
+export type ExtensionHostEventName = keyof ExtensionHostEventMap
+
+/**
  * ExtensionHost interface for bridging the vscode-shim with the actual extension host.
  *
  * The ExtensionHost acts as a message broker between the extension and the CLI/webview,
  * providing event-based communication and webview provider registration.
+ *
+ * @template TEventMap - Event map type that must include the core ExtensionHostEventMap events.
+ *                       Implementations can extend this with additional events.
  */
-export interface IExtensionHost {
+export interface IExtensionHost<TEventMap extends ExtensionHostEventMap = ExtensionHostEventMap> {
 	/**
 	 * Register a webview view provider with a specific view ID.
 	 * Called by WindowAPI.registerWebviewViewProvider to allow the extension host
@@ -55,7 +75,7 @@ export interface IExtensionHost {
 	 * @param message - The message payload to send with the event
 	 * @returns true if the event had listeners, false otherwise
 	 */
-	emit(event: string, message: unknown): boolean
+	emit<K extends keyof TEventMap>(event: K, message: TEventMap[K]): boolean
 
 	/**
 	 * Register a listener for an event.
@@ -65,5 +85,5 @@ export interface IExtensionHost {
 	 * @param listener - The callback function to invoke when the event is emitted
 	 * @returns The ExtensionHost instance for chaining
 	 */
-	on(event: string, listener: (message: unknown) => void): this
+	on<K extends keyof TEventMap>(event: K, listener: (message: TEventMap[K]) => void): this
 }
