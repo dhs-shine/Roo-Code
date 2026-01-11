@@ -8,7 +8,6 @@
  * - RooCodeAgent: Implements the acp.Agent interface
  * - AcpSession: Wraps ExtensionHost for individual sessions
  * - Translator: Converts between internal and ACP message formats
- * - AcpFileSystemService: Delegates file operations to ACP client
  * - UpdateBuffer: Batches session updates to reduce message frequency
  * - acpLog: File-based logger for debugging (writes to ~/.roo/acp.log)
  *
@@ -18,7 +17,6 @@
 
 export { RooCodeAgent, type RooCodeAgentOptions } from "./agent.js"
 export { AcpSession, type AcpSessionOptions } from "./session.js"
-export { AcpFileSystemService, createAcpFileSystemService } from "./file-system-service.js"
 export { UpdateBuffer, type UpdateBufferOptions } from "./update-buffer.js"
 export { acpLog } from "./logger.js"
 export * from "./translator.js"
