@@ -221,53 +221,6 @@ If you need to specify options:
 }
 ```
 
-### ACP Authentication
-
-When using ACP mode, authentication can be handled through:
-
-1. **Roo Code Cloud** - Sign in via the ACP auth flow (opens browser)
-2. **API Key** - Set `OPENROUTER_API_KEY` environment variable
-
-The ACP client will prompt you to authenticate if needed.
-
-### ACP Features
-
-- **Session Management**: Each ACP session creates an isolated Roo Code instance
-- **Tool Calls**: File operations, commands, and other tools are surfaced through ACP permission requests
-- **Mode Switching**: Switch between code, architect, ask, and debug modes
-- **Streaming**: Real-time streaming of agent output and thoughts
-- **Image Support**: Send images as part of prompts
-
-### ACP Architecture
-
-```
-┌─────────────────┐
-│  ACP Client     │
-│  (Zed, etc.)    │
-└────────┬────────┘
-         │ JSON-RPC over stdio
-         ▼
-┌─────────────────┐
-│  RooCodeAgent   │
-│  (acp.Agent)    │
-└────────┬────────┘
-         │
-┌────────┴────────┐
-│   AcpSession    │
-│  (per session)  │
-└────────┬────────┘
-         │
-┌────────┴────────┐
-│ ExtensionHost   │
-│ + vscode-shim   │
-└────────┬────────┘
-         │
-┌────────┴────────┐
-│   Extension     │
-│    Bundle       │
-└─────────────────┘
-```
-
 ## Environment Variables
 
 The CLI will look for API keys in environment variables if not provided via `--api-key`:
