@@ -1,10 +1,3 @@
-/**
- * Tests for UpdateBuffer
- *
- * Verifies that the buffer correctly batches text chunk updates
- * while passing through other updates immediately.
- */
-
 import type * as acp from "@agentclientprotocol/sdk"
 
 import { UpdateBuffer } from "../update-buffer.js"

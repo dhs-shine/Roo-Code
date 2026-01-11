@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach } from "vitest"
 import { DeltaTracker } from "../delta-tracker.js"
 
 describe("DeltaTracker", () => {

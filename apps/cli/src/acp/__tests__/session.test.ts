@@ -1,11 +1,5 @@
-/**
- * Tests for AcpSession
- */
-
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type * as acp from "@agentclientprotocol/sdk"
 
-// Mock the ExtensionHost before importing AcpSession
 vi.mock("@/agent/extension-host.js", () => {
 	const mockClient = {
 		on: vi.fn().mockReturnThis(),
@@ -25,7 +19,6 @@ vi.mock("@/agent/extension-host.js", () => {
 	}
 })
 
-// Import after mocking
 import { AcpSession, type AcpSessionOptions } from "../session.js"
 import { ExtensionHost } from "@/agent/extension-host.js"
 
@@ -41,7 +34,6 @@ describe("AcpSession", () => {
 	}
 
 	beforeEach(() => {
-		// Create a mock connection
 		mockConnection = {
 			sessionUpdate: vi.fn().mockResolvedValue(undefined),
 			requestPermission: vi.fn().mockResolvedValue({

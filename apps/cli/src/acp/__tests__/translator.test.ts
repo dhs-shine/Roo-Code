@@ -1,8 +1,3 @@
-/**
- * Tests for ACP Message Translator
- */
-
-import { describe, it, expect } from "vitest"
 import type { ClineMessage } from "@roo-code/types"
 
 import {

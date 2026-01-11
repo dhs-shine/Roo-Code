@@ -1,20 +1,13 @@
-/**
- * Tests for RooCodeAgent
- */
-
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type * as acp from "@agentclientprotocol/sdk"
 
 import { RooCodeAgent, type RooCodeAgentOptions } from "../agent.js"
 
-// Mock the auth module
 vi.mock("@/commands/auth/index.js", () => ({
 	login: vi.fn().mockResolvedValue({ success: true }),
 	logout: vi.fn().mockResolvedValue({ success: true }),
 	status: vi.fn().mockResolvedValue({ authenticated: false }),
 }))
 
-// Mock AcpSession
 vi.mock("../session.js", () => ({
 	AcpSession: {
 		create: vi.fn().mockResolvedValue({
@@ -40,7 +33,6 @@ describe("RooCodeAgent", () => {
 	}
 
 	beforeEach(() => {
-		// Create a mock connection
 		mockConnection = {
 			sessionUpdate: vi.fn().mockResolvedValue(undefined),
 			requestPermission: vi.fn().mockResolvedValue({
