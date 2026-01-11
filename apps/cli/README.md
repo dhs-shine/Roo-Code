@@ -171,6 +171,103 @@ Tokens are valid for 90 days. The CLI will prompt you to re-authenticate when yo
 | `roo auth logout` | Clear stored authentication token  |
 | `roo auth status` | Show current authentication status |
 
+## ACP (Agent Client Protocol) Integration
+
+The CLI supports the [Agent Client Protocol (ACP)](https://agentclientprotocol.com), allowing ACP-compatible editors like [Zed](https://zed.dev) to use Roo Code as their AI coding assistant.
+
+### Running ACP Server Mode
+
+Start the CLI in ACP server mode:
+
+```bash
+roo acp [options]
+```
+
+**ACP Options:**
+
+| Option                      | Description                                  | Default                       |
+| --------------------------- | -------------------------------------------- | ----------------------------- |
+| `-e, --extension <path>`    | Path to the extension bundle directory       | Auto-detected                 |
+| `-p, --provider <provider>` | API provider (anthropic, openai, openrouter) | `openrouter`                  |
+| `-m, --model <model>`       | Model to use                                 | `anthropic/claude-sonnet-4.5` |
+| `-M, --mode <mode>`         | Initial mode (code, architect, ask, debug)   | `code`                        |
+| `-k, --api-key <key>`       | API key for the LLM provider                 | From env var                  |
+
+### Configuring Zed
+
+Add the following to your Zed settings (`settings.json`):
+
+```json
+{
+	"agent_servers": {
+		"Roo Code": {
+			"command": "roo",
+			"args": ["acp"]
+		}
+	}
+}
+```
+
+If you need to specify options:
+
+```json
+{
+	"agent_servers": {
+		"Roo Code": {
+			"command": "roo",
+			"args": ["acp", "-e", "/path/to/extension", "-m", "anthropic/claude-sonnet-4.5"]
+		}
+	}
+}
+```
+
+### ACP Authentication
+
+When using ACP mode, authentication can be handled through:
+
+1. **Roo Code Cloud** - Sign in via the ACP auth flow (opens browser)
+2. **API Key** - Set `OPENROUTER_API_KEY` environment variable
+
+The ACP client will prompt you to authenticate if needed.
+
+### ACP Features
+
+- **Session Management**: Each ACP session creates an isolated Roo Code instance
+- **Tool Calls**: File operations, commands, and other tools are surfaced through ACP permission requests
+- **Mode Switching**: Switch between code, architect, ask, and debug modes
+- **Streaming**: Real-time streaming of agent output and thoughts
+- **Image Support**: Send images as part of prompts
+
+### ACP Architecture
+
+```
+┌─────────────────┐
+│  ACP Client     │
+│  (Zed, etc.)    │
+└────────┬────────┘
+         │ JSON-RPC over stdio
+         ▼
+┌─────────────────┐
+│  RooCodeAgent   │
+│  (acp.Agent)    │
+└────────┬────────┘
+         │
+┌────────┴────────┐
+│   AcpSession    │
+│  (per session)  │
+└────────┬────────┘
+         │
+┌────────┴────────┐
+│ ExtensionHost   │
+│ + vscode-shim   │
+└────────┬────────┘
+         │
+┌────────┴────────┐
+│   Extension     │
+│    Bundle       │
+└─────────────────┘
+```
+
 ## Environment Variables
 
 The CLI will look for API keys in environment variables if not provided via `--api-key`:

@@ -21,6 +21,7 @@
 		"clean": "rimraf dist .turbo"
 	},
 	"dependencies": {
+		"@agentclientprotocol/sdk": "^0.12.0",
 		"@inkjs/ui": "^2.0.0",
 		"@roo-code/core": "workspace:^",
 		"@roo-code/types": "workspace:^",
