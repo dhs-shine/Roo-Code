@@ -7,7 +7,8 @@
  */
 
 import type * as acp from "@agentclientprotocol/sdk"
-import { acpLog } from "./logger.js"
+import type { IAcpLogger } from "./interfaces.js"
+import { NullLogger } from "./interfaces.js"
 
 // =============================================================================
 // Types (exported)
@@ -20,6 +21,8 @@ interface UpdateBufferOptions {
 	minBufferSize?: number
 	/** Maximum time in ms before flushing (default: 500) */
 	flushDelayMs?: number
+	/** Logger instance (optional, defaults to NullLogger) */
+	logger?: IAcpLogger
 }
 
 type TextChunkUpdate = {
@@ -56,6 +59,7 @@ function isTextChunkUpdate(update: SessionUpdate): update is TextChunkUpdate {
 export class UpdateBuffer {
 	private readonly minBufferSize: number
 	private readonly flushDelayMs: number
+	private readonly logger: IAcpLogger
 
 	/** Buffered text for agent_message_chunk */
 	private messageBuffer = ""
@@ -71,6 +75,7 @@ export class UpdateBuffer {
 	constructor(sendUpdate: (update: SessionUpdate) => Promise<void>, options: UpdateBufferOptions = {}) {
 		this.minBufferSize = options.minBufferSize ?? 200
 		this.flushDelayMs = options.flushDelayMs ?? 500
+		this.logger = options.logger ?? new NullLogger()
 		this.sendUpdate = sendUpdate
 	}
 
@@ -106,7 +111,7 @@ export class UpdateBuffer {
 			return
 		}
 
-		acpLog.debug(
+		this.logger.debug(
 			"UpdateBuffer",
 			`Flushing buffers: message=${this.messageBuffer.length}, thought=${this.thoughtBuffer.length}`,
 		)
@@ -142,7 +147,7 @@ export class UpdateBuffer {
 		this.messageBuffer = ""
 		this.thoughtBuffer = ""
 		this.hasPendingContent = false
-		acpLog.debug("UpdateBuffer", "Buffer reset")
+		this.logger.debug("UpdateBuffer", "Buffer reset")
 	}
 
 	/**
@@ -176,7 +181,10 @@ export class UpdateBuffer {
 		// Check if we should flush based on size
 		const totalSize = this.messageBuffer.length + this.thoughtBuffer.length
 		if (totalSize >= this.minBufferSize) {
-			acpLog.debug("UpdateBuffer", `Size threshold reached (${totalSize} >= ${this.minBufferSize}), flushing`)
+			this.logger.debug(
+				"UpdateBuffer",
+				`Size threshold reached (${totalSize} >= ${this.minBufferSize}), flushing`,
+			)
 			void this.flush()
 			return
 		}
@@ -195,7 +203,7 @@ export class UpdateBuffer {
 
 		this.flushTimer = setTimeout(() => {
 			this.flushTimer = null
-			acpLog.debug("UpdateBuffer", "Flush timer expired")
+			this.logger.debug("UpdateBuffer", "Flush timer expired")
 			void this.flush()
 		}, this.flushDelayMs)
 	}

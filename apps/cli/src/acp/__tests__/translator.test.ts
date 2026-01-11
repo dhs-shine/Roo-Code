@@ -140,10 +140,17 @@ describe("parseToolFromMessage", () => {
 
 describe("mapToolKind", () => {
 	it("should map read operations", () => {
+		// Uses exact matching with normalized tool names from TOOL_CATEGORIES
 		expect(mapToolKind("read_file")).toBe("read")
+		expect(mapToolKind("readFile")).toBe("read")
+	})
+
+	it("should map list_files to read kind", () => {
+		// list operations are read-like in the ACP protocol
 		expect(mapToolKind("list_files")).toBe("read")
-		expect(mapToolKind("inspect_code")).toBe("read")
-		expect(mapToolKind("get_info")).toBe("read")
+		expect(mapToolKind("listFiles")).toBe("read")
+		expect(mapToolKind("listFilesTopLevel")).toBe("read")
+		expect(mapToolKind("listFilesRecursive")).toBe("read")
 	})
 
 	it("should map edit operations", () => {
@@ -151,53 +158,76 @@ describe("mapToolKind", () => {
 		expect(mapToolKind("apply_diff")).toBe("edit")
 		expect(mapToolKind("modify_file")).toBe("edit")
 		expect(mapToolKind("create_file")).toBe("edit")
+		expect(mapToolKind("newFileCreated")).toBe("edit")
+		expect(mapToolKind("editedExistingFile")).toBe("edit")
 	})
 
 	it("should map delete operations", () => {
 		expect(mapToolKind("delete_file")).toBe("delete")
-		expect(mapToolKind("remove_directory")).toBe("delete")
+		expect(mapToolKind("deleteFile")).toBe("delete")
+		expect(mapToolKind("remove_file")).toBe("delete")
+		expect(mapToolKind("removeFile")).toBe("delete")
 	})
 
 	it("should map move operations", () => {
 		expect(mapToolKind("move_file")).toBe("move")
+		expect(mapToolKind("moveFile")).toBe("move")
 		expect(mapToolKind("rename_file")).toBe("move")
-		expect(mapToolKind("move_directory")).toBe("move")
+		expect(mapToolKind("renameFile")).toBe("move")
 	})
 
 	it("should map search operations", () => {
 		expect(mapToolKind("search_files")).toBe("search")
-		expect(mapToolKind("find_references")).toBe("search")
-		expect(mapToolKind("grep_code")).toBe("search")
+		expect(mapToolKind("searchFiles")).toBe("search")
+		expect(mapToolKind("codebase_search")).toBe("search")
+		expect(mapToolKind("codebaseSearch")).toBe("search")
+		expect(mapToolKind("grep")).toBe("search")
+		expect(mapToolKind("ripgrep")).toBe("search")
 	})
 
 	it("should map execute operations", () => {
 		expect(mapToolKind("execute_command")).toBe("execute")
-		expect(mapToolKind("run_script")).toBe("execute")
+		expect(mapToolKind("executeCommand")).toBe("execute")
+		expect(mapToolKind("run_command")).toBe("execute")
+		expect(mapToolKind("runCommand")).toBe("execute")
 	})
 
 	it("should map think operations", () => {
 		expect(mapToolKind("think")).toBe("think")
-		expect(mapToolKind("reasoning_step")).toBe("think")
-		expect(mapToolKind("plan_execution")).toBe("think")
-		expect(mapToolKind("analyze_code")).toBe("think")
+		expect(mapToolKind("reason")).toBe("think")
+		expect(mapToolKind("plan")).toBe("think")
+		expect(mapToolKind("analyze")).toBe("think")
 	})
 
 	it("should map fetch operations", () => {
-		expect(mapToolKind("browser_action")).toBe("fetch")
-		expect(mapToolKind("fetch_url")).toBe("fetch")
+		// Note: browser_action is NOT mapped to fetch because browser tools are disabled in CLI
+		expect(mapToolKind("fetch")).toBe("fetch")
 		expect(mapToolKind("web_request")).toBe("fetch")
+		expect(mapToolKind("webRequest")).toBe("fetch")
 		expect(mapToolKind("http_get")).toBe("fetch")
+		expect(mapToolKind("httpGet")).toBe("fetch")
+		expect(mapToolKind("http_post")).toBe("fetch")
+		expect(mapToolKind("url_fetch")).toBe("fetch")
+	})
+
+	it("should map browser_action to other (browser tools disabled in CLI)", () => {
+		// browser_action intentionally maps to "other" because browser tools are disabled in CLI mode
+		expect(mapToolKind("browser_action")).toBe("other")
 	})
 
 	it("should map switch_mode operations", () => {
 		expect(mapToolKind("switch_mode")).toBe("switch_mode")
 		expect(mapToolKind("switchMode")).toBe("switch_mode")
 		expect(mapToolKind("set_mode")).toBe("switch_mode")
+		expect(mapToolKind("setMode")).toBe("switch_mode")
 	})
 
 	it("should return other for unknown operations", () => {
 		expect(mapToolKind("unknown_tool")).toBe("other")
 		expect(mapToolKind("custom_operation")).toBe("other")
+		// Tool names that don't exactly match categories also return other
+		expect(mapToolKind("inspect_code")).toBe("other")
+		expect(mapToolKind("get_info")).toBe("other")
 	})
 })
 
@@ -345,6 +375,7 @@ describe("buildToolCallFromMessage", () => {
 
 		const result = buildToolCallFromMessage(message)
 
+		// Tool ID is deterministic based on message timestamp for debugging
 		expect(result.toolCallId).toBe("tool-12345")
 		// Title is now human-readable based on tool name and filename
 		expect(result.title).toBe("Read file.txt")
@@ -362,6 +393,7 @@ describe("buildToolCallFromMessage", () => {
 
 		const result = buildToolCallFromMessage(message)
 
+		// Tool ID is deterministic based on message timestamp for debugging
 		expect(result.toolCallId).toBe("tool-12345")
 		expect(result.kind).toBe("other")
 	})

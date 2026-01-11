@@ -3,72 +3,36 @@
  *
  * Manages a single ACP session, wrapping an ExtensionHost instance.
  * Handles message translation, event streaming, and permission requests.
- *
- * Commands are executed internally by the extension (like the reference
- * implementations gemini-cli and opencode), not through ACP terminals.
  */
 
-import * as fs from "node:fs"
-import * as path from "node:path"
-import * as acp from "@agentclientprotocol/sdk"
-import type { ClineMessage, ClineAsk, ClineSay } from "@roo-code/types"
+import {
+	type SessionNotification,
+	type ClientCapabilities,
+	type PromptRequest,
+	type PromptResponse,
+	AgentSideConnection,
+} from "@agentclientprotocol/sdk"
 
 import { type ExtensionHostOptions, ExtensionHost } from "@/agent/extension-host.js"
-import type { WaitingForInputEvent, TaskCompletedEvent, CommandExecutionOutputEvent } from "@/agent/events.js"
 
-import {
-	translateToAcpUpdate,
-	isPermissionAsk,
-	isCompletionAsk,
-	extractPromptText,
-	extractPromptImages,
-	buildToolCallFromMessage,
-} from "./translator.js"
+import { extractPromptText, extractPromptImages } from "./translator.js"
 import { acpLog } from "./logger.js"
 import { DeltaTracker } from "./delta-tracker.js"
 import { UpdateBuffer } from "./update-buffer.js"
-
-// =============================================================================
-// Streaming Configuration
-// =============================================================================
-
-/**
- * Configuration for streaming content types.
- * Defines which message types should be delta-streamed and how.
- */
-interface StreamConfig {
-	/** ACP update type to use */
-	updateType: "agent_message_chunk" | "agent_thought_chunk"
-	/** Optional transform to apply to the text before delta tracking */
-	textTransform?: (text: string) => string
-}
-
-/**
- * Declarative configuration for which `say` types should be delta-streamed.
- * Any say type not listed here will fall through to the translator for
- * non-streaming handling.
- *
- * To add a new streaming type, simply add it to this map.
- */
-const DELTA_STREAM_CONFIG: Partial<Record<ClineSay, StreamConfig>> = {
-	// Regular text messages from the agent
-	text: { updateType: "agent_message_chunk" },
-
-	// Command output (terminal results, etc.)
-	command_output: { updateType: "agent_message_chunk" },
-
-	// Final completion summary
-	completion_result: { updateType: "agent_message_chunk" },
-
-	// Agent's reasoning/thinking
-	reasoning: { updateType: "agent_thought_chunk" },
-
-	// Error messages (prefixed with "Error: ")
-	error: {
-		updateType: "agent_message_chunk",
-		textTransform: (text) => `Error: ${text}`,
-	},
-}
+import { PromptStateMachine } from "./prompt-state.js"
+import { ToolHandlerRegistry } from "./tool-handler.js"
+import { CommandStreamManager } from "./command-stream.js"
+import { ToolContentStreamManager } from "./tool-content-stream.js"
+import { SessionEventHandler, createSessionEventHandler } from "./session-event-handler.js"
+import type {
+	IAcpSession,
+	IAcpLogger,
+	IDeltaTracker,
+	IUpdateBuffer,
+	IPromptStateMachine,
+	AcpSessionDependencies,
+} from "./interfaces.js"
+import { type Result, ok, err } from "./utils/index.js"
 
 // =============================================================================
 // Types
@@ -87,10 +51,6 @@ export interface AcpSessionOptions {
 	mode: string
 }
 
-// =============================================================================
-// AcpSession Class
-// =============================================================================
-
 /**
  * AcpSession wraps an ExtensionHost instance and bridges it to the ACP protocol.
  *
@@ -98,36 +58,30 @@ export interface AcpSessionOptions {
  * in a sandboxed environment. The session translates events from the
  * ExtensionClient to ACP session updates and handles permission requests.
  */
-export class AcpSession {
-	private pendingPrompt: AbortController | null = null
-	private promptResolve: ((response: acp.PromptResponse) => void) | null = null
-	private isProcessingPrompt = false
+export class AcpSession implements IAcpSession {
+	/** Logger instance (injected) */
+	private readonly logger: IAcpLogger
+
+	/** State machine for prompt lifecycle management */
+	private readonly promptState: IPromptStateMachine
 
 	/** Delta tracker for streaming content - ensures only new text is sent */
-	private readonly deltaTracker = new DeltaTracker()
+	private readonly deltaTracker: IDeltaTracker
 
 	/** Update buffer for batching session updates to reduce message frequency */
-	private readonly updateBuffer: UpdateBuffer
+	private readonly updateBuffer: IUpdateBuffer
 
-	/**
-	 * The current prompt text - used to filter out user message echo.
-	 * When the extension receives a task, it often sends a `text` message
-	 * containing the user's input, which we should NOT echo back to ACP
-	 * since the client already displays the user's message.
-	 */
-	private currentPromptText: string | null = null
+	/** Tool handler registry for polymorphic tool dispatch */
+	private readonly toolHandlerRegistry: ToolHandlerRegistry
 
-	/**
-	 * Track pending command tool calls to send proper status updates.
-	 * Maps tool call ID to command info for the "Run Command" UI.
-	 */
-	private pendingCommandCalls: Map<string, { toolCallId: string; command: string; ts: number }> = new Map()
+	/** Command stream manager for handling command output */
+	private readonly commandStreamManager: CommandStreamManager
 
-	/**
-	 * Track which command executions have sent the opening code fence.
-	 * Used to wrap command output in markdown code blocks.
-	 */
-	private commandCodeFencesSent: Set<string> = new Set()
+	/** Tool content stream manager for handling file creates/edits */
+	private readonly toolContentStreamManager: ToolContentStreamManager
+
+	/** Session event handler for managing extension events */
+	private readonly eventHandler: SessionEventHandler
 
 	/** Workspace path for resolving relative file paths */
 	private readonly workspacePath: string
@@ -135,13 +89,66 @@ export class AcpSession {
 	private constructor(
 		private readonly sessionId: string,
 		private readonly extensionHost: ExtensionHost,
-		private readonly connection: acp.AgentSideConnection,
+		private readonly connection: AgentSideConnection,
 		workspacePath: string,
+		deps: AcpSessionDependencies = {},
 	) {
 		this.workspacePath = workspacePath
-		// Initialize update buffer with the actual send function
-		// Uses defaults: 200 chars min buffer, 500ms delay
-		this.updateBuffer = new UpdateBuffer((update) => this.sendUpdateDirect(update))
+
+		// Initialize dependencies with defaults or injected instances.
+		this.logger = deps.logger ?? acpLog
+		this.promptState = deps.createPromptStateMachine?.() ?? new PromptStateMachine({ logger: this.logger })
+		this.deltaTracker = deps.createDeltaTracker?.() ?? new DeltaTracker()
+
+		// Initialize update buffer with the actual send function.
+		// Uses defaults: 200 chars min buffer, 500ms delay.
+		// Wrap sendUpdateDirect to match the expected Promise<void> signature.
+		const sendDirectAdapter = async (update: SessionNotification["update"]): Promise<void> => {
+			await this.sendUpdateDirect(update)
+			// Result is logged internally; adapter converts to void for interface compatibility.
+		}
+
+		this.updateBuffer =
+			deps.createUpdateBuffer?.(sendDirectAdapter) ?? new UpdateBuffer(sendDirectAdapter, { logger: this.logger })
+
+		// Initialize tool handler registry.
+		this.toolHandlerRegistry = new ToolHandlerRegistry()
+
+		// Create send update callback for stream managers.
+		const sendUpdate = (update: SessionNotification["update"]) => {
+			void this.sendUpdate(update)
+		}
+
+		// Initialize stream managers with injected logger.
+		this.commandStreamManager = new CommandStreamManager({
+			deltaTracker: this.deltaTracker,
+			sendUpdate,
+			logger: this.logger,
+		})
+
+		this.toolContentStreamManager = new ToolContentStreamManager({
+			deltaTracker: this.deltaTracker,
+			sendUpdate,
+			logger: this.logger,
+		})
+
+		this.eventHandler = createSessionEventHandler({
+			logger: this.logger,
+			client: extensionHost.client,
+			promptState: this.promptState,
+			deltaTracker: this.deltaTracker,
+			commandStreamManager: this.commandStreamManager,
+			toolContentStreamManager: this.toolContentStreamManager,
+			toolHandlerRegistry: this.toolHandlerRegistry,
+			sendUpdate,
+			approveAction: () => this.extensionHost.client.approve(),
+			respondWithText: (text: string) => this.extensionHost.client.respond(text),
+			sendToExtension: (message) =>
+				this.extensionHost.sendToExtension(message as Parameters<typeof this.extensionHost.sendToExtension>[0]),
+			workspacePath,
+		})
+
+		this.eventHandler.onTaskCompleted((success) => this.handleTaskCompleted(success))
 	}
 
 	// ===========================================================================
@@ -153,17 +160,26 @@ export class AcpSession {
 	 *
 	 * This initializes an ExtensionHost for the given working directory
 	 * and sets up event handlers to stream updates to the ACP client.
+	 *
+	 * @param sessionId - Unique session identifier
+	 * @param cwd - Working directory for the session
+	 * @param connection - ACP connection for sending updates
+	 * @param _clientCapabilities - Client capabilities (currently unused)
+	 * @param options - Session configuration options
+	 * @param deps - Optional dependencies for testing
 	 */
 	static async create(
 		sessionId: string,
 		cwd: string,
-		connection: acp.AgentSideConnection,
-		_clientCapabilities: acp.ClientCapabilities | undefined,
+		connection: AgentSideConnection,
+		_clientCapabilities: ClientCapabilities | undefined,
 		options: AcpSessionOptions,
+		deps: AcpSessionDependencies = {},
 	): Promise<AcpSession> {
-		acpLog.info("Session", `Creating session ${sessionId} in ${cwd}`)
+		const logger = deps.logger ?? acpLog
+		logger.info("Session", `Creating session ${sessionId} in ${cwd}`)
 
-		// Create ExtensionHost with ACP-specific configuration
+		// Create ExtensionHost with ACP-specific configuration.
 		const hostOptions: ExtensionHostOptions = {
 			mode: options.mode,
 			user: null,
@@ -178,12 +194,12 @@ export class AcpSession {
 			ephemeral: true,
 		}
 
-		acpLog.debug("Session", "Creating ExtensionHost", hostOptions)
+		logger.debug("Session", "Creating ExtensionHost", hostOptions)
 		const extensionHost = new ExtensionHost(hostOptions)
 		await extensionHost.activate()
-		acpLog.info("Session", `ExtensionHost activated for session ${sessionId}`)
+		logger.info("Session", `ExtensionHost activated for session ${sessionId}`)
 
-		const session = new AcpSession(sessionId, extensionHost, connection, cwd)
+		const session = new AcpSession(sessionId, extensionHost, connection, cwd, deps)
 		session.setupEventHandlers()
 
 		return session
@@ -197,535 +213,26 @@ export class AcpSession {
 	 * Set up event handlers to translate ExtensionClient events to ACP updates.
 	 */
 	private setupEventHandlers(): void {
-		const client = this.extensionHost.client
-
-		// Handle new messages
-		client.on("message", (msg: ClineMessage) => {
-			this.handleMessage(msg)
-		})
-
-		// Handle message updates (partial -> complete)
-		client.on("messageUpdated", (msg: ClineMessage) => {
-			this.handleMessage(msg)
-		})
-
-		// Handle permission requests (tool calls, commands, etc.)
-		client.on("waitingForInput", (event: WaitingForInputEvent) => {
-			void this.handleWaitingForInput(event)
-		})
-
-		// Handle streaming command execution output (live terminal output)
-		client.on("commandExecutionOutput", (event: CommandExecutionOutputEvent) => {
-			this.handleCommandExecutionOutput(event)
-		})
-
-		// Handle task completion
-		client.on("taskCompleted", (event: TaskCompletedEvent) => {
-			this.handleTaskCompleted(event)
-		})
+		this.eventHandler.setupEventHandlers()
 	}
 
 	/**
-	 * Handle an incoming message from the extension.
-	 *
-	 * Uses the declarative DELTA_STREAM_CONFIG to automatically determine
-	 * which message types should be delta-streamed and how.
-	 */
-	private handleMessage(message: ClineMessage): void {
-		acpLog.debug(
-			"Session",
-			`Message received: type=${message.type}, say=${message.say}, ask=${message.ask}, ts=${message.ts}`,
-		)
-
-		// Check if this is a streaming message type
-		if (message.type === "say" && message.text && message.say) {
-			// Handle command_output specially for the "Run Command" UI
-			if (message.say === "command_output") {
-				this.handleCommandOutput(message)
-				return
-			}
-
-			const config = DELTA_STREAM_CONFIG[message.say]
-
-			if (config) {
-				// Filter out user message echo: when the extension starts a task,
-				// it often sends a `text` message with the user's input. Since the
-				// ACP client already displays the user's message, we should skip this.
-				if (message.say === "text" && this.isUserEcho(message.text)) {
-					acpLog.debug("Session", `Skipping user echo (${message.text.length} chars)`)
-					return
-				}
-
-				// Apply text transform if configured (e.g., "Error: " prefix)
-				const textToSend = config.textTransform ? config.textTransform(message.text) : message.text
-
-				// Get delta using the tracker (handles all bookkeeping automatically)
-				const delta = this.deltaTracker.getDelta(message.ts, textToSend)
-
-				if (delta) {
-					// acpLog.debug("Session", `Queueing ${message.say} delta: ${delta.length} chars (msg ${message.ts})`)
-					void this.sendUpdate({
-						sessionUpdate: config.updateType,
-						content: { type: "text", text: delta },
-					})
-				}
-				return
-			}
-		}
-
-		// For non-streaming message types, use the translator
-		const update = translateToAcpUpdate(message)
-		if (update) {
-			acpLog.notification("sessionUpdate", {
-				sessionId: this.sessionId,
-				updateKind: (update as { sessionUpdate?: string }).sessionUpdate,
-			})
-			void this.sendUpdate(update)
-		}
-	}
-
-	/**
-	 * Handle command_output messages and update the corresponding tool call.
-	 * This provides the "Run Command" UI with completion status in Zed.
-	 *
-	 * NOTE: Streaming output is handled by handleCommandExecutionOutput().
-	 * This method only handles the final tool_call_update for completion.
-	 */
-	private handleCommandOutput(message: ClineMessage): void {
-		const output = message.text || ""
-		const isPartial = message.partial === true
-
-		acpLog.info("Session", `handleCommandOutput: partial=${message.partial}, text length=${output.length}`)
-
-		// Skip partial updates - streaming is handled by handleCommandExecutionOutput()
-		if (isPartial) {
-			return
-		}
-
-		// Send closing code fence if any was opened
-		if (this.commandCodeFencesSent.size > 0) {
-			acpLog.info("Session", "Sending closing code fence")
-			void this.sendUpdate({
-				sessionUpdate: "agent_message_chunk",
-				content: { type: "text", text: "\n```" },
-			})
-			this.commandCodeFencesSent.clear()
-		}
-
-		// Handle completion - update the tool call UI
-		const pendingCall = this.findMostRecentPendingCommand()
-
-		if (pendingCall) {
-			acpLog.info("Session", `Command completed: ${pendingCall.toolCallId}`)
-
-			// Command completed - send final update and remove from pending
-			void this.sendUpdate({
-				sessionUpdate: "tool_call_update",
-				toolCallId: pendingCall.toolCallId,
-				status: "completed",
-				content: [
-					{
-						type: "content",
-						content: { type: "text", text: output },
-					},
-				],
-				rawOutput: { output },
-			})
-			this.pendingCommandCalls.delete(pendingCall.toolCallId)
-		}
-	}
-
-	/**
-	 * Handle streaming command execution output (live terminal output).
-	 * This provides real-time output during command execution.
-	 * Output is wrapped in markdown code blocks for proper rendering.
-	 */
-	private handleCommandExecutionOutput(event: CommandExecutionOutputEvent): void {
-		const { executionId, output } = event
-
-		acpLog.info("Session", `commandExecutionOutput: executionId=${executionId}, output length=${output.length}`)
-
-		// Stream output as agent message for visibility in chat
-		// Use executionId as the message key for delta tracking
-		const delta = this.deltaTracker.getDelta(executionId, output)
-		if (delta) {
-			// Send opening code fence on first output for this execution
-			const isFirstChunk = !this.commandCodeFencesSent.has(executionId)
-			if (isFirstChunk) {
-				this.commandCodeFencesSent.add(executionId)
-				acpLog.info("Session", `Sending opening code fence for execution ${executionId}`)
-				void this.sendUpdate({
-					sessionUpdate: "agent_message_chunk",
-					content: { type: "text", text: "```\n" },
-				})
-			}
-
-			acpLog.info("Session", `Streaming command execution output: ${delta.length} chars`)
-			void this.sendUpdate({
-				sessionUpdate: "agent_message_chunk",
-				content: { type: "text", text: delta },
-			})
-		}
-
-		// Also update the tool call UI if we have a pending command
-		const pendingCall = this.findMostRecentPendingCommand()
-		if (pendingCall) {
-			acpLog.info("Session", `Updating tool call ${pendingCall.toolCallId} with streaming output`)
-			void this.sendUpdate({
-				sessionUpdate: "tool_call_update",
-				toolCallId: pendingCall.toolCallId,
-				status: "in_progress",
-				content: [
-					{
-						type: "content",
-						content: { type: "text", text: output },
-					},
-				],
-			})
-		}
-	}
-
-	/**
-	 * Find the most recent pending command call.
-	 */
-	private findMostRecentPendingCommand(): { toolCallId: string; command: string; ts: number } | undefined {
-		let pendingCall: { toolCallId: string; command: string; ts: number } | undefined
-
-		for (const [, call] of this.pendingCommandCalls) {
-			if (!pendingCall || call.ts > pendingCall.ts) {
-				pendingCall = call
-			}
-		}
-
-		return pendingCall
-	}
-
-	/**
-	 * Reset delta tracking and buffer for a new prompt.
+	 * Reset state for a new prompt.
 	 */
 	private resetForNewPrompt(): void {
-		this.deltaTracker.reset()
+		this.eventHandler.reset()
 		this.updateBuffer.reset()
-	}
-
-	/**
-	 * Handle waiting for input events (permission requests).
-	 */
-	private async handleWaitingForInput(event: WaitingForInputEvent): Promise<void> {
-		const { ask, message } = event
-		const askType = ask as ClineAsk
-		acpLog.debug("Session", `Waiting for input: ask=${askType}`)
-
-		// Handle permission-required asks
-		if (isPermissionAsk(askType)) {
-			acpLog.info("Session", `Permission request: ${askType}`)
-			await this.handlePermissionRequest(message, askType)
-			return
-		}
-
-		// Handle completion asks
-		if (isCompletionAsk(askType)) {
-			acpLog.debug("Session", "Completion ask - handled by taskCompleted event")
-			// Completion is handled by taskCompleted event
-			return
-		}
-
-		// Handle followup questions - auto-continue for now
-		// In a more sophisticated implementation, these could be surfaced
-		// to the ACP client for user input
-		if (askType === "followup") {
-			acpLog.debug("Session", "Auto-responding to followup")
-			this.extensionHost.client.respond("")
-			return
-		}
-
-		// Handle resume_task - auto-resume
-		if (askType === "resume_task") {
-			acpLog.debug("Session", "Auto-approving resume_task")
-			this.extensionHost.client.approve()
-			return
-		}
-
-		// Handle API failures - auto-retry for now
-		if (askType === "api_req_failed") {
-			acpLog.warn("Session", "API request failed, auto-retrying")
-			this.extensionHost.client.approve()
-			return
-		}
-
-		// Default: approve and continue
-		acpLog.debug("Session", `Auto-approving unknown ask type: ${askType}`)
-		this.extensionHost.client.approve()
-	}
-
-	/**
-	 * Handle a permission request for a tool call.
-	 *
-	 * Auto-approves all tool calls without prompting the user. This allows
-	 * the agent to work autonomously. Tool calls are still reported to the
-	 * client for visibility via tool_call notifications.
-	 *
-	 * For commands, tracks the call to enable the "Run Command" UI with output.
-	 * For other tools (search, read, etc.), the results are already available
-	 * in the message, so we send both the tool_call and tool_call_update immediately.
-	 */
-	private handlePermissionRequest(message: ClineMessage, ask: ClineAsk): void {
-		const toolCall = buildToolCallFromMessage(message, this.workspacePath)
-		const isCommand = ask === "command"
-
-		// For commands, ensure kind is "execute" for the "Run Command" UI
-		const kind = isCommand ? "execute" : toolCall.kind
-
-		acpLog.info("Session", `Auto-approving tool: ${toolCall.title}, ask=${ask}, isCommand=${isCommand}`)
-		acpLog.info("Session", `Tool call details: id=${toolCall.toolCallId}, kind=${kind}, title=${toolCall.title}`)
-		acpLog.info("Session", `Tool call rawInput: ${JSON.stringify(toolCall.rawInput)}`)
-
-		// Build the full update with corrected kind for commands
-		const initialUpdate = {
-			sessionUpdate: "tool_call" as const,
-			...toolCall,
-			kind,
-			status: "in_progress" as const,
-		}
-		acpLog.info("Session", `Sending tool_call update: ${JSON.stringify(initialUpdate)}`)
-
-		// Notify client about the tool call with in_progress status
-		void this.sendUpdate(initialUpdate)
-
-		// For commands, track the call for the "Run Command" UI
-		// (completion will come via handleCommandOutput)
-		if (isCommand) {
-			this.pendingCommandCalls.set(toolCall.toolCallId, {
-				toolCallId: toolCall.toolCallId,
-				command: message.text || "",
-				ts: message.ts,
-			})
-			acpLog.info("Session", `Tracking command: ${toolCall.toolCallId}`)
-		} else {
-			// For non-command tools (search, read, etc.), the results are already
-			// available in the message. Send completion update immediately.
-			const rawInput = toolCall.rawInput as Record<string, unknown>
-
-			// Build completion update
-			const completionUpdate: acp.SessionNotification["update"] = {
-				sessionUpdate: "tool_call_update",
-				toolCallId: toolCall.toolCallId,
-				status: "completed",
-				rawOutput: rawInput,
-			}
-
-			// For edit operations with diff content, use the pre-parsed diff from toolCall
-			if (kind === "edit" && toolCall.content && toolCall.content.length > 0) {
-				acpLog.info("Session", `Edit tool with ${toolCall.content.length} content items (diffs)`)
-				completionUpdate.content = toolCall.content
-			} else {
-				// For search, read, etc. - extract and format text content
-				const rawContent = this.extractContentFromRawInput(rawInput)
-				acpLog.info("Session", `Non-edit tool content: ${rawContent ? `${rawContent.length} chars` : "none"}`)
-
-				if (rawContent) {
-					const formattedContent = this.formatToolResultContent(kind ?? "other", rawContent)
-					completionUpdate.content = [
-						{
-							type: "content",
-							content: { type: "text", text: formattedContent },
-						},
-					]
-				}
-			}
-
-			acpLog.info("Session", `Sending tool_call_update (completed): ${toolCall.toolCallId}`)
-			void this.sendUpdate(completionUpdate)
-		}
-
-		// Auto-approve the tool call
-		this.extensionHost.client.approve()
-	}
-
-	/**
-	 * Maximum number of lines to show in read operation results.
-	 * Files longer than this will be truncated with a "..." indicator.
-	 */
-	private static readonly MAX_READ_LINES = 100
-
-	/**
-	 * Format tool result content for cleaner display in the UI.
-	 *
-	 * - For search tools: formats verbose results into a clean file list with summary
-	 * - For read tools: truncates long file contents
-	 * - Both search and read results are wrapped in code blocks for better rendering
-	 * - For other tools: returns the content as-is
-	 */
-	private formatToolResultContent(kind: string, content: string): string {
-		switch (kind) {
-			case "search":
-				return this.wrapInCodeBlock(this.formatSearchResults(content))
-			case "read":
-				return this.wrapInCodeBlock(this.formatReadResults(content))
-			default:
-				return content
-		}
-	}
-
-	/**
-	 * Extract content from rawInput.
-	 *
-	 * For readFile tools, the "content" field contains the file PATH (not contents),
-	 * so we need to read the file ourselves.
-	 *
-	 * For other tools, try common field names for content.
-	 */
-	private extractContentFromRawInput(rawInput: Record<string, unknown>): string | undefined {
-		const toolName = (rawInput.tool as string | undefined)?.toLowerCase() || ""
-
-		// For readFile tools, read the actual file content
-		if (toolName === "readfile" || toolName === "read_file") {
-			return this.readFileContent(rawInput)
-		}
-
-		// For other tools, try common field names
-		const contentFields = ["content", "text", "result", "output", "fileContent", "data"]
-
-		for (const field of contentFields) {
-			const value = rawInput[field]
-			if (typeof value === "string" && value.length > 0) {
-				return value
-			}
-		}
-
-		return undefined
-	}
-
-	/**
-	 * Read file content for readFile tool operations.
-	 * The rawInput.content field contains the absolute path, not the file contents.
-	 */
-	private readFileContent(rawInput: Record<string, unknown>): string | undefined {
-		// The "content" field in readFile contains the absolute path
-		const filePath = rawInput.content as string | undefined
-		const relativePath = rawInput.path as string | undefined
-
-		// Try absolute path first, then relative path
-		const pathToRead = filePath || (relativePath ? path.resolve(this.workspacePath, relativePath) : undefined)
-
-		if (!pathToRead) {
-			acpLog.warn("Session", "readFile tool has no path")
-			return undefined
-		}
-
-		try {
-			const content = fs.readFileSync(pathToRead, "utf-8")
-			acpLog.info("Session", `Read file content: ${content.length} chars from ${pathToRead}`)
-			return content
-		} catch (error) {
-			acpLog.error("Session", `Failed to read file ${pathToRead}: ${error}`)
-			return `Error reading file: ${error}`
-		}
-	}
-
-	/**
-	 * Wrap content in markdown code block for better rendering.
-	 */
-	private wrapInCodeBlock(content: string): string {
-		return "```\n" + content + "\n```"
-	}
-
-	/**
-	 * Format read results by truncating long file contents.
-	 */
-	private formatReadResults(content: string): string {
-		const lines = content.split("\n")
-
-		if (lines.length <= AcpSession.MAX_READ_LINES) {
-			return content
-		}
-
-		// Truncate and add indicator
-		const truncated = lines.slice(0, AcpSession.MAX_READ_LINES).join("\n")
-		const remaining = lines.length - AcpSession.MAX_READ_LINES
-		return `${truncated}\n\n... (${remaining} more lines)`
-	}
-
-	/**
-	 * Format search results into a clean summary with file list.
-	 *
-	 * Input format:
-	 * ```
-	 * Found 112 results.
-	 *
-	 * # src/acp/__tests__/agent.test.ts
-	 *   9 |
-	 *  10 | // Mock the auth module
-	 * ...
-	 *
-	 * # README.md
-	 * 105 |
-	 * ...
-	 * ```
-	 *
-	 * Output format:
-	 * ```
-	 * Found 112 results in 20 files:
-	 * • src/acp/__tests__/agent.test.ts
-	 * • README.md
-	 * ...
-	 * ```
-	 */
-	private formatSearchResults(content: string): string {
-		// Extract count from "Found X results" line
-		const countMatch = content.match(/Found (\d+) results?/)
-		const resultCount = countMatch?.[1] ? parseInt(countMatch[1], 10) : null
-
-		// Extract unique file paths from "# path/to/file" lines
-		const filePattern = /^# (.+)$/gm
-		const files = new Set<string>()
-		let match
-		while ((match = filePattern.exec(content)) !== null) {
-			if (match[1]) {
-				files.add(match[1])
-			}
-		}
-
-		// Sort files alphabetically
-		const fileList = Array.from(files).sort((a, b) => a.localeCompare(b))
-
-		// Build the formatted output
-		if (fileList.length === 0) {
-			// No files found, return original (might be "No results found" or similar)
-			return content.split("\n")[0] || content
-		}
-
-		const summary =
-			resultCount !== null
-				? `Found ${resultCount} result${resultCount !== 1 ? "s" : ""} in ${fileList.length} file${fileList.length !== 1 ? "s" : ""}`
-				: `Found matches in ${fileList.length} file${fileList.length !== 1 ? "s" : ""}`
-
-		// Use markdown list format (renders nicely in code blocks)
-		const formattedFiles = fileList.map((f) => `- ${f}`).join("\n")
-
-		return `${summary}\n\n${formattedFiles}`
 	}
 
 	/**
 	 * Handle task completion.
 	 */
-	private handleTaskCompleted(event: TaskCompletedEvent): void {
-		acpLog.info("Session", `Task completed: success=${event.success}`)
-
-		// Flush any buffered updates before completing
+	private handleTaskCompleted(success: boolean): void {
+		// Flush any buffered updates before completing.
 		void this.updateBuffer.flush().then(() => {
-			// Resolve the pending prompt
-			if (this.promptResolve) {
-				// StopReason only has: "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled"
-				// Use "refusal" for failed tasks as it's the closest match
-				const stopReason: acp.StopReason = event.success ? "end_turn" : "refusal"
-				acpLog.debug("Session", `Resolving prompt with stopReason: ${stopReason}`)
-				this.promptResolve({ stopReason })
-				this.promptResolve = null
-			}
-
-			this.isProcessingPrompt = false
-			this.pendingPrompt = null
+			// Complete the prompt using the state machine.
+			const stopReason = this.promptState.complete(success)
+			this.logger.debug("Session", `Resolving prompt with stopReason: ${stopReason}`)
 		})
 	}
 
@@ -736,70 +243,44 @@ export class AcpSession {
 	/**
 	 * Process a prompt request from the ACP client.
 	 */
-	async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
-		acpLog.info("Session", `Processing prompt for session ${this.sessionId}`)
+	async prompt(params: PromptRequest): Promise<PromptResponse> {
+		this.logger.info("Session", `Processing prompt for session ${this.sessionId}`)
 
-		// Cancel any pending prompt
+		// Cancel any pending prompt.
 		this.cancel()
 
-		// Reset delta tracking and buffer for new prompt
+		// Reset state for new prompt.
 		this.resetForNewPrompt()
 
-		this.pendingPrompt = new AbortController()
-		this.isProcessingPrompt = true
-
-		// Extract text and images from prompt
+		// Extract text and images from prompt.
 		const text = extractPromptText(params.prompt)
 		const images = extractPromptImages(params.prompt)
 
-		// Store prompt text to filter out user echo
-		this.currentPromptText = text
+		this.logger.debug("Session", `Prompt text (${text.length} chars), images: ${images.length}`)
 
-		acpLog.debug("Session", `Prompt text (${text.length} chars), images: ${images.length}`)
+		// Start the prompt using the state machine.
+		const promise = this.promptState.startPrompt(text)
 
-		// Start the task
 		if (images.length > 0) {
-			acpLog.debug("Session", "Starting task with images")
-			this.extensionHost.sendToExtension({
-				type: "newTask",
-				text,
-				images,
-			})
+			this.logger.debug("Session", "Starting task with images")
+			this.extensionHost.sendToExtension({ type: "newTask", text, images })
 		} else {
-			acpLog.debug("Session", "Starting task (text only)")
-			this.extensionHost.sendToExtension({
-				type: "newTask",
-				text,
-			})
+			this.logger.debug("Session", "Starting task (text only)")
+			this.extensionHost.sendToExtension({ type: "newTask", text })
 		}
 
-		// Wait for completion
-		return new Promise((resolve) => {
-			this.promptResolve = resolve
-
-			// Handle abort
-			this.pendingPrompt?.signal.addEventListener("abort", () => {
-				acpLog.info("Session", "Prompt aborted")
-				resolve({ stopReason: "cancelled" })
-				this.promptResolve = null
-			})
-		})
+		return promise
 	}
 
 	/**
 	 * Cancel the current prompt.
 	 */
 	cancel(): void {
-		if (this.pendingPrompt) {
-			acpLog.info("Session", "Cancelling pending prompt")
-			this.pendingPrompt.abort()
-			this.pendingPrompt = null
-		}
-
-		if (this.isProcessingPrompt) {
-			acpLog.info("Session", "Sending cancelTask to extension")
+		if (this.promptState.isProcessing()) {
+			this.logger.info("Session", "Cancelling pending prompt")
+			this.promptState.cancel()
+			this.logger.info("Session", "Sending cancelTask to extension")
 			this.extensionHost.sendToExtension({ type: "cancelTask" })
-			this.isProcessingPrompt = false
 		}
 	}
 
@@ -807,23 +288,21 @@ export class AcpSession {
 	 * Set the session mode.
 	 */
 	setMode(mode: string): void {
-		acpLog.info("Session", `Setting mode to: ${mode}`)
-		this.extensionHost.sendToExtension({
-			type: "updateSettings",
-			updatedSettings: { mode },
-		})
+		this.logger.info("Session", `Setting mode to: ${mode}`)
+		this.extensionHost.sendToExtension({ type: "updateSettings", updatedSettings: { mode } })
 	}
 
 	/**
 	 * Dispose of the session and release resources.
 	 */
 	async dispose(): Promise<void> {
-		acpLog.info("Session", `Disposing session ${this.sessionId}`)
+		this.logger.info("Session", `Disposing session ${this.sessionId}`)
 		this.cancel()
-		// Flush any remaining buffered updates
+
+		// Flush any remaining buffered updates.
 		await this.updateBuffer.flush()
 		await this.extensionHost.dispose()
-		acpLog.info("Session", `Session ${this.sessionId} disposed`)
+		this.logger.info("Session", `Session ${this.sessionId} disposed`)
 	}
 
 	// ===========================================================================
@@ -833,23 +312,36 @@ export class AcpSession {
 	/**
 	 * Send an update to the ACP client through the buffer.
 	 * Text chunks are batched, other updates are sent immediately.
+	 *
+	 * @returns Result indicating success or failure.
 	 */
-	private async sendUpdate(update: acp.SessionNotification["update"]): Promise<void> {
-		await this.updateBuffer.queueUpdate(update)
+	private async sendUpdate(update: SessionNotification["update"]): Promise<Result<void>> {
+		try {
+			await this.updateBuffer.queueUpdate(update)
+			return ok(undefined)
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			this.logger.error("Session", `Failed to queue update: ${errorMessage}`)
+			return err(`Failed to queue update: ${errorMessage}`)
+		}
 	}
 
 	/**
 	 * Send an update directly to the ACP client (bypasses buffer).
 	 * Used by the UpdateBuffer to actually send batched updates.
+	 *
+	 * @returns Result indicating success or failure with error details.
 	 */
-	private async sendUpdateDirect(update: acp.SessionNotification["update"]): Promise<void> {
+	private async sendUpdateDirect(update: SessionNotification["update"]): Promise<Result<void>> {
 		try {
-			await this.connection.sessionUpdate({
-				sessionId: this.sessionId,
-				update,
-			})
+			// Log the full update being sent to ACP connection
+			this.logger.debug("Session", `ACP OUT: ${JSON.stringify({ sessionId: this.sessionId, update })}`)
+			await this.connection.sessionUpdate({ sessionId: this.sessionId, update })
+			return ok(undefined)
 		} catch (error) {
-			console.error("[AcpSession] Failed to send update:", error)
+			const errorMessage = error instanceof Error ? error.message : String(error)
+			this.logger.error("Session", `Failed to send update: ${errorMessage}`, error)
+			return err(`Failed to send update to ACP client: ${errorMessage}`)
 		}
 	}
 
@@ -858,42 +350,5 @@ export class AcpSession {
 	 */
 	getSessionId(): string {
 		return this.sessionId
-	}
-
-	/**
-	 * Check if a text message is an echo of the user's prompt.
-	 *
-	 * When the extension starts processing a task, it often sends a `text`
-	 * message containing the user's input. Since the ACP client already
-	 * displays the user's message, we should filter this out to avoid
-	 * showing the message twice.
-	 *
-	 * Uses a fuzzy match to handle minor differences (whitespace, etc.).
-	 */
-	private isUserEcho(text: string): boolean {
-		if (!this.currentPromptText) {
-			return false
-		}
-
-		// Normalize both strings for comparison
-		const normalizedPrompt = this.currentPromptText.trim().toLowerCase()
-		const normalizedText = text.trim().toLowerCase()
-
-		// Exact match
-		if (normalizedText === normalizedPrompt) {
-			return true
-		}
-
-		// Check if text is contained in prompt (might be truncated)
-		if (normalizedPrompt.includes(normalizedText) && normalizedText.length > 10) {
-			return true
-		}
-
-		// Check if prompt is contained in text (might have wrapper)
-		if (normalizedText.includes(normalizedPrompt) && normalizedPrompt.length > 10) {
-			return true
-		}
-
-		return false
 	}
 }

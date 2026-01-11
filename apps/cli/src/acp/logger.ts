@@ -13,6 +13,8 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 import * as os from "node:os"
 
+import type { IAcpLogger } from "./interfaces.js"
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -25,7 +27,7 @@ const MAX_LOG_SIZE = 10 * 1024 * 1024 // 10MB
 // Logger Class
 // =============================================================================
 
-class AcpLogger {
+class AcpLogger implements IAcpLogger {
 	private logPath: string
 	private enabled: boolean = true
 	private stream: fs.WriteStream | null = null

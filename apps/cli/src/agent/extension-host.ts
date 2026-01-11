@@ -163,6 +163,7 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 		// Initialize output manager.
 		this.outputManager = new OutputManager({
 			disabled: options.disableOutput,
+			debug: options.debug,
 		})
 
 		// Initialize prompt manager with console mode callbacks.

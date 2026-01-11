@@ -105,6 +105,9 @@ export class MessageProcessor {
 	 * @param message - The raw message from the extension
 	 */
 	processMessage(message: ExtensionMessage): void {
+		// Debug logging for ALL messages to trace flow (always enabled for debugging)
+		console.error(`[MessageProcessor-DEBUG] processMessage: type=${message.type}`)
+
 		if (this.options.debug) {
 			debugLog("[MessageProcessor] Received message", { type: message.type })
 		}
@@ -247,6 +250,12 @@ export class MessageProcessor {
 		}
 
 		const clineMessage = message.clineMessage
+
+		// Debug logging for messageUpdated
+		const msgType = clineMessage.type === "ask" ? `ask:${clineMessage.ask}` : `say:${clineMessage.say}`
+		console.error(
+			`[MessageProcessor-DEBUG] handleMessageUpdated: ${msgType}, ts=${clineMessage.ts}, partial=${clineMessage.partial}, textLen=${clineMessage.text?.length || 0}`,
+		)
 
 		const previousState = this.store.getAgentState()
 
@@ -422,6 +431,12 @@ export class MessageProcessor {
 		// A more sophisticated implementation would track seen message timestamps
 		const lastMessage = messages[messages.length - 1]
 		if (lastMessage) {
+			// Debug logging for emitted messages
+			const msgType = lastMessage.type === "ask" ? `ask:${lastMessage.ask}` : `say:${lastMessage.say}`
+			console.error(
+				`[MessageProcessor-DEBUG] emitNewMessageEvents (last of ${messages.length}): ${msgType}, ts=${lastMessage.ts}, partial=${lastMessage.partial}, textLen=${lastMessage.text?.length || 0}`,
+			)
+
 			// DEBUG: Log all emitted ask messages to trace partial handling
 			if (this.options.debug && lastMessage.type === "ask") {
 				debugLog("[MessageProcessor] EMIT message", {
