@@ -14,7 +14,7 @@ import * as acp from "@agentclientprotocol/sdk"
 import type { ClineMessage, ClineAsk, ClineSay } from "@roo-code/types"
 
 import { type ExtensionHostOptions, ExtensionHost } from "@/agent/extension-host.js"
-import type { WaitingForInputEvent, TaskCompletedEvent } from "@/agent/events.js"
+import type { WaitingForInputEvent, TaskCompletedEvent, CommandExecutionOutputEvent } from "@/agent/events.js"
 
 import {
 	translateToAcpUpdate,
@@ -123,6 +123,12 @@ export class AcpSession {
 	 */
 	private pendingCommandCalls: Map<string, { toolCallId: string; command: string; ts: number }> = new Map()
 
+	/**
+	 * Track which command executions have sent the opening code fence.
+	 * Used to wrap command output in markdown code blocks.
+	 */
+	private commandCodeFencesSent: Set<string> = new Set()
+
 	/** Workspace path for resolving relative file paths */
 	private readonly workspacePath: string
 
@@ -208,6 +214,11 @@ export class AcpSession {
 			void this.handleWaitingForInput(event)
 		})
 
+		// Handle streaming command execution output (live terminal output)
+		client.on("commandExecutionOutput", (event: CommandExecutionOutputEvent) => {
+			this.handleCommandExecutionOutput(event)
+		})
+
 		// Handle task completion
 		client.on("taskCompleted", (event: TaskCompletedEvent) => {
 			this.handleTaskCompleted(event)
@@ -252,7 +263,7 @@ export class AcpSession {
 				const delta = this.deltaTracker.getDelta(message.ts, textToSend)
 
 				if (delta) {
-					acpLog.debug("Session", `Sending ${message.say} delta: ${delta.length} chars (msg ${message.ts})`)
+					// acpLog.debug("Session", `Queueing ${message.say} delta: ${delta.length} chars (msg ${message.ts})`)
 					void this.sendUpdate({
 						sessionUpdate: config.updateType,
 						content: { type: "text", text: delta },
@@ -275,20 +286,81 @@ export class AcpSession {
 
 	/**
 	 * Handle command_output messages and update the corresponding tool call.
-	 * This provides the "Run Command" UI with live output in Zed.
-	 * Also streams output as agent_message_chunk for visibility in the main chat.
+	 * This provides the "Run Command" UI with completion status in Zed.
+	 *
+	 * NOTE: Streaming output is handled by handleCommandExecutionOutput().
+	 * This method only handles the final tool_call_update for completion.
 	 */
 	private handleCommandOutput(message: ClineMessage): void {
 		const output = message.text || ""
 		const isPartial = message.partial === true
 
 		acpLog.info("Session", `handleCommandOutput: partial=${message.partial}, text length=${output.length}`)
-		acpLog.info("Session", `Pending command calls: ${this.pendingCommandCalls.size}`)
 
-		// Always stream command output as agent message for visibility in chat
-		const delta = this.deltaTracker.getDelta(message.ts, output)
+		// Skip partial updates - streaming is handled by handleCommandExecutionOutput()
+		if (isPartial) {
+			return
+		}
+
+		// Send closing code fence if any was opened
+		if (this.commandCodeFencesSent.size > 0) {
+			acpLog.info("Session", "Sending closing code fence")
+			void this.sendUpdate({
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text: "\n```" },
+			})
+			this.commandCodeFencesSent.clear()
+		}
+
+		// Handle completion - update the tool call UI
+		const pendingCall = this.findMostRecentPendingCommand()
+
+		if (pendingCall) {
+			acpLog.info("Session", `Command completed: ${pendingCall.toolCallId}`)
+
+			// Command completed - send final update and remove from pending
+			void this.sendUpdate({
+				sessionUpdate: "tool_call_update",
+				toolCallId: pendingCall.toolCallId,
+				status: "completed",
+				content: [
+					{
+						type: "content",
+						content: { type: "text", text: output },
+					},
+				],
+				rawOutput: { output },
+			})
+			this.pendingCommandCalls.delete(pendingCall.toolCallId)
+		}
+	}
+
+	/**
+	 * Handle streaming command execution output (live terminal output).
+	 * This provides real-time output during command execution.
+	 * Output is wrapped in markdown code blocks for proper rendering.
+	 */
+	private handleCommandExecutionOutput(event: CommandExecutionOutputEvent): void {
+		const { executionId, output } = event
+
+		acpLog.info("Session", `commandExecutionOutput: executionId=${executionId}, output length=${output.length}`)
+
+		// Stream output as agent message for visibility in chat
+		// Use executionId as the message key for delta tracking
+		const delta = this.deltaTracker.getDelta(executionId, output)
 		if (delta) {
-			acpLog.info("Session", `Streaming command output as agent message: ${delta.length} chars`)
+			// Send opening code fence on first output for this execution
+			const isFirstChunk = !this.commandCodeFencesSent.has(executionId)
+			if (isFirstChunk) {
+				this.commandCodeFencesSent.add(executionId)
+				acpLog.info("Session", `Sending opening code fence for execution ${executionId}`)
+				void this.sendUpdate({
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "```\n" },
+				})
+			}
+
+			acpLog.info("Session", `Streaming command execution output: ${delta.length} chars`)
 			void this.sendUpdate({
 				sessionUpdate: "agent_message_chunk",
 				content: { type: "text", text: delta },
@@ -297,40 +369,19 @@ export class AcpSession {
 
 		// Also update the tool call UI if we have a pending command
 		const pendingCall = this.findMostRecentPendingCommand()
-
 		if (pendingCall) {
-			acpLog.info("Session", `Found pending call: ${pendingCall.toolCallId}, isPartial=${isPartial}`)
-
-			if (isPartial) {
-				// Still running - send update with current output
-				void this.sendUpdate({
-					sessionUpdate: "tool_call_update",
-					toolCallId: pendingCall.toolCallId,
-					status: "in_progress",
-					content: [
-						{
-							type: "content",
-							content: { type: "text", text: output },
-						},
-					],
-				})
-			} else {
-				// Command completed - send final update and remove from pending
-				void this.sendUpdate({
-					sessionUpdate: "tool_call_update",
-					toolCallId: pendingCall.toolCallId,
-					status: "completed",
-					content: [
-						{
-							type: "content",
-							content: { type: "text", text: output },
-						},
-					],
-					rawOutput: { output },
-				})
-				this.pendingCommandCalls.delete(pendingCall.toolCallId)
-				acpLog.info("Session", `Command completed: ${pendingCall.toolCallId}`)
-			}
+			acpLog.info("Session", `Updating tool call ${pendingCall.toolCallId} with streaming output`)
+			void this.sendUpdate({
+				sessionUpdate: "tool_call_update",
+				toolCallId: pendingCall.toolCallId,
+				status: "in_progress",
+				content: [
+					{
+						type: "content",
+						content: { type: "text", text: output },
+					},
+				],
+			})
 		}
 	}
 

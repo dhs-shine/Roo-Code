@@ -507,12 +507,12 @@ export function mapToolKind(toolName: string): acp.ToolKind {
 	}
 
 	// Fetch operations (check BEFORE read since "http_get" contains "get" substring)
+	// Note: "browser" is NOT included here since browser tools are disabled in CLI
 	if (
-		lowerName.includes("browser") ||
-		lowerName.includes("web") ||
 		lowerName.includes("fetch") ||
 		lowerName.includes("http") ||
-		lowerName.includes("url")
+		lowerName.includes("url") ||
+		lowerName.includes("web_request")
 	) {
 		return "fetch"
 	}
