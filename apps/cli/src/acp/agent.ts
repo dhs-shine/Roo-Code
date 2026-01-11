@@ -9,6 +9,7 @@ import * as acp from "@agentclientprotocol/sdk"
 import { randomUUID } from "node:crypto"
 
 import { login, status } from "@/commands/auth/index.js"
+import { DEFAULT_FLAGS } from "@/types/constants.js"
 
 import { AcpSession, type AcpSessionOptions } from "./session.js"
 import { acpLog } from "./logger.js"
@@ -207,7 +208,7 @@ export class RooCodeAgent implements acp.Agent {
 			extensionPath: this.options.extensionPath,
 			provider: this.options.provider || "openrouter",
 			apiKey: this.options.apiKey || process.env.OPENROUTER_API_KEY,
-			model: this.options.model || "anthropic/claude-sonnet-4-20250514",
+			model: this.options.model || DEFAULT_FLAGS.model,
 			mode: this.options.mode || "code",
 		}
 
