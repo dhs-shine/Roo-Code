@@ -269,12 +269,8 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 
 		// Handle new messages - delegate to OutputManager.
 		this.client.on("message", (msg: ClineMessage) => {
-			// === TEST LOGGING: New messages ===
-			const msgType = msg.type === "say" ? `say:${msg.say}` : `ask:${msg.ask}`
-			const partial = msg.partial ? "PARTIAL" : "COMPLETE"
-			testLog.info("ExtensionClient", `MSG NEW: ${msgType} ${partial} ts=${msg.ts}`)
-
 			this.logMessageDebug(msg, "new")
+
 			// DEBUG: Log all incoming messages with timestamp (only when -d flag is set)
 			if (this.options.debug) {
 				const ts = new Date().toISOString()
@@ -282,17 +278,14 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 				const partial = msg.partial ? "PARTIAL" : "COMPLETE"
 				process.stdout.write(`\n[DEBUG ${ts}] NEW ${msgType} ${partial} ts=${msg.ts}\n`)
 			}
+
 			this.outputManager.outputMessage(msg)
 		})
 
 		// Handle message updates - delegate to OutputManager.
 		this.client.on("messageUpdated", (msg: ClineMessage) => {
-			// === TEST LOGGING: Message updates ===
-			const msgType = msg.type === "say" ? `say:${msg.say}` : `ask:${msg.ask}`
-			const partial = msg.partial ? "PARTIAL" : "COMPLETE"
-			testLog.info("ExtensionClient", `MSG UPDATE: ${msgType} ${partial} ts=${msg.ts}`)
-
 			this.logMessageDebug(msg, "updated")
+
 			// DEBUG: Log all message updates with timestamp (only when -d flag is set)
 			if (this.options.debug) {
 				const ts = new Date().toISOString()
@@ -300,21 +293,17 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 				const partial = msg.partial ? "PARTIAL" : "COMPLETE"
 				process.stdout.write(`\n[DEBUG ${ts}] UPDATED ${msgType} ${partial} ts=${msg.ts}\n`)
 			}
+
 			this.outputManager.outputMessage(msg)
 		})
 
 		// Handle waiting for input - delegate to AskDispatcher.
 		this.client.on("waitingForInput", (event: WaitingForInputEvent) => {
-			// === TEST LOGGING: Waiting for input ===
-			testLog.info("ExtensionClient", `WAITING FOR INPUT: ask=${event.ask}`)
 			this.askDispatcher.handleAsk(event.message)
 		})
 
 		// Handle task completion.
 		this.client.on("taskCompleted", (event: TaskCompletedEvent) => {
-			// === TEST LOGGING: Task completed ===
-			testLog.info("ExtensionClient", `TASK COMPLETED: success=${event.success}`)
-
 			// Output completion message via OutputManager.
 			// Note: completion_result is an "ask" type, not a "say" type.
 			if (event.message && event.message.type === "ask" && event.message.ask === "completion_result") {
@@ -489,17 +478,6 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 	public sendToExtension(message: WebviewMessage): void {
 		if (!this.isReady) {
 			throw new Error("You cannot send messages to the extension before it is ready")
-		}
-
-		// === TEST LOGGING: Track outgoing messages to extension (especially cancelTask) ===
-		if (message.type === "cancelTask") {
-			const currentState = this.client.getAgentState()
-			testLog.info(
-				"ExtensionHost",
-				`SEND TO EXT: cancelTask (state=${currentState.state}, running=${currentState.isRunning}, streaming=${currentState.isStreaming}, ask=${currentState.currentAsk || "none"})`,
-			)
-		} else if (message.type === "askResponse") {
-			testLog.info("ExtensionHost", `SEND TO EXT: askResponse (response=${message.askResponse})`)
 		}
 
 		this.emit("webviewMessage", message)
