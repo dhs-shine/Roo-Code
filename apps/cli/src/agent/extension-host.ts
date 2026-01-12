@@ -189,8 +189,9 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 			commandExecutionTimeout: 30,
 			browserToolEnabled: false,
 			enableCheckpoints: false,
-			// Disable preventFocusDisruption experiment for CLI - it's only relevant for VSCode diff views
-			// and preventing it causes tool messages to not stream during LLM generation
+			// Disable preventFocusDisruption experiment for CLI - it's only
+			// relevant for VSCode diff views and preventing it causes tool
+			// messages to not stream during LLM generation.
 			experiments: {
 				multiFileApplyDiff: false,
 				powerSteering: false,
@@ -368,6 +369,7 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 
 		if (this.options.ephemeral) {
 			this.ephemeralStorageDir = await createEphemeralStorageDir()
+			storageDir = this.ephemeralStorageDir
 		}
 
 		// Create VSCode API mock.
