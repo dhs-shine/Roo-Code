@@ -342,13 +342,6 @@ export class AcpSession implements IAcpSession {
 	 */
 	cancel(): void {
 		if (this.promptState.isProcessing()) {
-			// === TEST LOGGING: Cancel triggered ===
-			const currentState = this.extensionHost.client.getAgentState()
-			this.logger.info(
-				"Session",
-				`CANCEL TASK: sending cancelTask (state=${currentState.state}, running=${currentState.isRunning}, streaming=${currentState.isStreaming}, ask=${currentState.currentAsk || "none"})`,
-			)
-
 			this.isCancelling = true
 			// Content continues flowing to the client during cancellation so users
 			// see what the LLM was generating when cancel was triggered.
