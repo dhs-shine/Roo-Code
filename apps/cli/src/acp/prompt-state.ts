@@ -127,12 +127,10 @@ export class PromptStateMachine {
 	 */
 	startPrompt(promptText: string): Promise<PromptCompletionResult> {
 		if (this.state !== "idle") {
-			this.logger.warn("PromptStateMachine", `Cannot start prompt in state: ${this.state}`)
 			// Cancel existing prompt first
 			this.cancel()
 		}
 
-		this.logger.debug("PromptStateMachine", "Transitioning: idle -> processing")
 		this.state = "processing"
 		this.abortController = new AbortController()
 		this.currentPromptText = promptText
@@ -143,7 +141,6 @@ export class PromptStateMachine {
 			// Handle abort signal
 			this.abortController?.signal.addEventListener("abort", () => {
 				if (this.state === "processing") {
-					this.logger.debug("PromptStateMachine", "Abort signal received")
 					this.transitionToComplete("cancelled")
 				}
 			})
@@ -169,11 +166,9 @@ export class PromptStateMachine {
 	 */
 	cancel(): void {
 		if (this.state !== "processing") {
-			this.logger.debug("PromptStateMachine", `Cancel ignored in state: ${this.state}`)
 			return
 		}
 
-		this.logger.debug("PromptStateMachine", "Cancelling prompt")
 		this.abortController?.abort()
 		// Note: The abort handler will call transitionToComplete
 	}
@@ -184,8 +179,6 @@ export class PromptStateMachine {
 	 * Should be called when starting a new prompt to ensure clean state.
 	 */
 	reset(): void {
-		this.logger.debug("PromptStateMachine", `Resetting from state: ${this.state}`)
-
 		// Clean up any pending resources
 		if (this.abortController) {
 			this.abortController.abort()
@@ -198,19 +191,17 @@ export class PromptStateMachine {
 	}
 
 	// ===========================================================================
-	// Private Methods
+	// Public Methods (for direct control)
 	// ===========================================================================
 
 	/**
 	 * Transition to completion and resolve the promise.
+	 * This is public to allow direct control of the stop reason (e.g., for cancellation).
 	 */
-	private transitionToComplete(stopReason: acp.StopReason): void {
+	transitionToComplete(stopReason: acp.StopReason): void {
 		if (this.state !== "processing") {
-			this.logger.debug("PromptStateMachine", `Already completed, ignoring transition with reason: ${stopReason}`)
 			return
 		}
-
-		this.logger.debug("PromptStateMachine", `Transitioning: processing -> idle (reason: ${stopReason})`)
 
 		this.state = "idle"
 

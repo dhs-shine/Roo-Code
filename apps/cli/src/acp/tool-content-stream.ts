@@ -95,14 +95,8 @@ export class ToolContentStreamManager {
 
 		// Only stream content for file write operations (uses tool registry)
 		if (!isFileWriteTool(toolName)) {
-			this.logger.debug("ToolContentStream", `Skipping content streaming for non-file tool: ${toolName}`)
 			return true // Handled (by skipping)
 		}
-
-		this.logger.debug(
-			"ToolContentStream",
-			`handleToolContentStreaming: tool=${toolName}, path=${toolPath}, partial=${isPartial}, contentLen=${content.length}`,
-		)
 
 		// Check if we have valid path and content to start streaming
 		// Path must have a file extension to be considered valid (uses shared utility)
@@ -123,7 +117,6 @@ export class ToolContentStreamManager {
 	 */
 	reset(): void {
 		this.toolContentHeadersSent.clear()
-		this.logger.debug("ToolContentStream", "Reset tool content stream state")
 	}
 
 	/**
@@ -170,7 +163,6 @@ export class ToolContentStreamManager {
 		// perceived latency during the gap while LLM generates file content.
 		if (hasValidPath && !this.toolContentHeadersSent.has(ts)) {
 			this.toolContentHeadersSent.add(ts)
-			this.logger.debug("ToolContentStream", `Sending tool content header for ${toolPath}`)
 			this.sendUpdate({
 				sessionUpdate: "agent_message_chunk",
 				content: { type: "text", text: `\n**Creating ${toolPath}**\n\`\`\`\n` },
@@ -184,7 +176,6 @@ export class ToolContentStreamManager {
 			const delta = this.deltaTracker.getDelta(deltaKey, content)
 
 			if (delta) {
-				this.logger.debug("ToolContentStream", `Streaming tool content delta: ${delta.length} chars`)
 				this.sendUpdate({
 					sessionUpdate: "agent_message_chunk",
 					content: { type: "text", text: delta },
@@ -196,7 +187,7 @@ export class ToolContentStreamManager {
 	/**
 	 * Handle a complete (non-partial) tool message.
 	 */
-	private handleCompleteMessage(ts: number, toolPath: string, content: string): void {
+	private handleCompleteMessage(ts: number, _toolPath: string, _content: string): void {
 		// Message complete - finish streaming and clean up
 		if (this.toolContentHeadersSent.has(ts)) {
 			// Send closing code fence
@@ -209,9 +200,5 @@ export class ToolContentStreamManager {
 
 		// Note: The actual tool_call notification will be sent via handleWaitingForInput
 		// when the waitingForInput event fires (which happens when partial becomes false)
-		this.logger.debug(
-			"ToolContentStream",
-			`Tool content streaming complete for ${toolPath}: ${content.length} chars`,
-		)
 	}
 }

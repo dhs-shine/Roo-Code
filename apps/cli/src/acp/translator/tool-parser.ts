@@ -158,6 +158,10 @@ export function generateToolTitle(toolName: string, filePath?: string): string {
 		// Browser actions
 		browser_action: "Browser action",
 		browserAction: "Browser action",
+
+		// Plan updates
+		updateTodoList: "Update plan",
+		update_todo_list: "Update plan",
 	}
 
 	return toolTitles[toolName] || (fileName ? `${toolName}: ${fileName}` : toolName)

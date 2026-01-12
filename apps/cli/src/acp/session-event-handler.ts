@@ -10,7 +10,13 @@ import type { ClineMessage, ClineAsk, ClineSay, ExtensionMessage, ExtensionState
 
 import type { WaitingForInputEvent, TaskCompletedEvent, CommandExecutionOutputEvent } from "@/agent/events.js"
 
-import { translateToAcpUpdate, isPermissionAsk, isCompletionAsk } from "./translator.js"
+import {
+	translateToAcpUpdate,
+	isPermissionAsk,
+	isCompletionAsk,
+	isTodoListMessage,
+	createPlanUpdateFromMessage,
+} from "./translator.js"
 import { isUserEcho } from "./utils/index.js"
 import type {
 	IAcpLogger,
@@ -122,6 +128,8 @@ export interface SessionEventHandlerDeps {
 	workspacePath: string
 	/** Initial mode ID */
 	initialModeId: string
+	/** Callback to check if cancellation is in progress */
+	isCancelling: () => boolean
 }
 
 /**
@@ -163,6 +171,7 @@ export class SessionEventHandler {
 	private readonly respondWithText: (text: string) => void
 	private readonly sendToExtension: (message: unknown) => void
 	private readonly workspacePath: string
+	private readonly isCancelling: () => boolean
 
 	private taskCompletedCallback: TaskCompletedCallback | null = null
 	private modeChangedCallback: ModeChangedCallback | null = null
@@ -199,6 +208,7 @@ export class SessionEventHandler {
 		this.sendToExtension = deps.sendToExtension
 		this.workspacePath = deps.workspacePath
 		this.currentModeId = deps.initialModeId
+		this.isCancelling = deps.isCancelling
 	}
 
 	// ===========================================================================
@@ -301,10 +311,30 @@ export class SessionEventHandler {
 	 * which message types should be delta-streamed and how.
 	 */
 	private handleMessage(message: ClineMessage): void {
-		this.logger.debug(
-			"SessionEventHandler",
-			`Message received: type=${message.type}, say=${message.say}, ask=${message.ask}, ts=${message.ts}, partial=${message.partial}`,
-		)
+		// Don't process messages if there's no active prompt
+		// NOTE: isCancelling guard REMOVED - we now show all content even during cancellation
+		// so the user can see exactly what was produced before the task paused
+		if (!this.promptState.isProcessing()) {
+			return
+		}
+
+		// === TEST LOGGING: Log messages that arrive during cancellation ===
+		if (this.isCancelling()) {
+			const msgType = message.type === "say" ? `say:${message.say}` : `ask:${message.ask}`
+			const partial = message.partial ? "PARTIAL" : "COMPLETE"
+			this.logger.info("EventHandler", `MSG DURING CANCEL (processing): ${msgType} ${partial} ts=${message.ts}`)
+		}
+
+		// Handle todo list updates - translate to ACP plan updates
+		// Detects both tool asks for updateTodoList and user_edit_todos say messages
+		if (isTodoListMessage(message)) {
+			const planUpdate = createPlanUpdateFromMessage(message)
+			if (planUpdate) {
+				this.sendUpdate(planUpdate)
+			}
+			// Don't return - let the message also be processed by other handlers
+			// (e.g., for permission requests that may follow)
+		}
 
 		// Handle streaming for tool ask messages (file creates/edits)
 		// These contain content that grows as the LLM generates it
@@ -326,7 +356,6 @@ export class SessionEventHandler {
 			if (config) {
 				// Filter out user message echo
 				if (message.say === "text" && isUserEcho(message.text, this.promptState.getPromptText())) {
-					this.logger.debug("SessionEventHandler", `Skipping user echo (${message.text.length} chars)`)
 					return
 				}
 
@@ -349,9 +378,6 @@ export class SessionEventHandler {
 		// For non-streaming message types, use the translator
 		const update = translateToAcpUpdate(message)
 		if (update) {
-			this.logger.notification("sessionUpdate", {
-				updateKind: (update as { sessionUpdate?: string }).sessionUpdate,
-			})
 			this.sendUpdate(update)
 		}
 	}
@@ -366,18 +392,24 @@ export class SessionEventHandler {
 	private async handleWaitingForInput(event: WaitingForInputEvent): Promise<void> {
 		const { ask, message } = event
 		const askType = ask as ClineAsk
-		this.logger.debug("SessionEventHandler", `Waiting for input: ask=${askType}`)
+
+		// Don't auto-approve asks if there's no active prompt or if cancellation is in progress
+		if (!this.promptState.isProcessing() || this.isCancelling()) {
+			// === TEST LOGGING: Skipped ask due to cancellation ===
+			if (this.isCancelling()) {
+				this.logger.info("EventHandler", `ASK SKIPPED (cancelling): ask=${askType} ts=${message.ts}`)
+			}
+			return
+		}
 
 		// Handle permission-required asks
 		if (isPermissionAsk(askType)) {
-			this.logger.info("SessionEventHandler", `Permission request: ${askType}`)
 			this.handlePermissionRequest(message, askType)
 			return
 		}
 
 		// Handle completion asks
 		if (isCompletionAsk(askType)) {
-			this.logger.debug("SessionEventHandler", "Completion ask - handled by taskCompleted event")
 			// Completion is handled by taskCompleted event
 			return
 		}
@@ -386,27 +418,23 @@ export class SessionEventHandler {
 		// In a more sophisticated implementation, these could be surfaced
 		// to the ACP client for user input
 		if (askType === "followup") {
-			this.logger.debug("SessionEventHandler", "Auto-responding to followup")
 			this.respondWithText("")
 			return
 		}
 
 		// Handle resume_task - auto-resume
 		if (askType === "resume_task") {
-			this.logger.debug("SessionEventHandler", "Auto-approving resume_task")
 			this.approveAction()
 			return
 		}
 
 		// Handle API failures - auto-retry for now
 		if (askType === "api_req_failed") {
-			this.logger.warn("SessionEventHandler", "API request failed, auto-retrying")
 			this.approveAction()
 			return
 		}
 
 		// Default: approve and continue
-		this.logger.debug("SessionEventHandler", `Auto-approving unknown ask type: ${askType}`)
 		this.approveAction()
 	}
 
@@ -429,7 +457,6 @@ export class SessionEventHandler {
 
 		// Check if we've already processed this permission request
 		if (this.processedPermissions.has(permissionKey)) {
-			this.logger.debug("SessionEventHandler", `Skipping duplicate permission request: ${ask}`)
 			// Still need to approve the action to unblock the extension
 			this.approveAction()
 			return
@@ -444,9 +471,6 @@ export class SessionEventHandler {
 		// Dispatch to the appropriate handler via the registry
 		const result = this.toolHandlerRegistry.handle(context)
 
-		this.logger.debug("SessionEventHandler", `Auto-approving tool: ask=${ask}`)
-		this.logger.debug("SessionEventHandler", `Sending tool_call update`)
-
 		// Send the initial in_progress update
 		this.sendUpdate(result.initialUpdate)
 
@@ -458,7 +482,6 @@ export class SessionEventHandler {
 
 		// Send completion update if available (non-command tools)
 		if (result.completionUpdate) {
-			this.logger.debug("SessionEventHandler", `Sending tool_call_update (completed)`)
 			this.sendUpdate(result.completionUpdate)
 		}
 
@@ -474,8 +497,6 @@ export class SessionEventHandler {
 	 * Handle task completion.
 	 */
 	private handleTaskCompleted(event: TaskCompletedEvent): void {
-		this.logger.info("SessionEventHandler", `Task completed: success=${event.success}`)
-
 		if (this.taskCompletedCallback) {
 			this.taskCompletedCallback(event.success)
 		}
@@ -491,7 +512,6 @@ export class SessionEventHandler {
 	private handleExtensionMessage(msg: ExtensionMessage): void {
 		// Handle "modes" message - list of available modes
 		if (msg.type === "modes" && msg.modes) {
-			this.logger.debug("SessionEventHandler", `Received modes: ${msg.modes.length} modes`)
 			this.availableModes = msg.modes.map((m) => ({
 				id: m.slug,
 				name: m.name,
@@ -503,9 +523,7 @@ export class SessionEventHandler {
 		if (msg.type === "state" && msg.state) {
 			const state = msg.state as ExtensionState
 			if (state.mode && state.mode !== this.currentModeId) {
-				const previousMode = this.currentModeId
 				this.currentModeId = state.mode
-				this.logger.info("SessionEventHandler", `Mode changed: ${previousMode} -> ${this.currentModeId}`)
 
 				// Send mode update notification
 				this.sendUpdate({
@@ -535,7 +553,6 @@ export class SessionEventHandler {
 			name: m.name,
 			description: undefined,
 		}))
-		this.logger.debug("SessionEventHandler", `Updated available modes: ${this.availableModes.length} modes`)
 	}
 }
 

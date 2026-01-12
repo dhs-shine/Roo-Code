@@ -15,12 +15,12 @@ import {
 } from "@agentclientprotocol/sdk"
 
 import { type ExtensionHostOptions, ExtensionHost } from "@/agent/extension-host.js"
+import { AgentLoopState } from "@/agent/agent-state.js"
 
 import { DEFAULT_MODELS } from "./types.js"
 import { extractPromptText, extractPromptImages } from "./translator.js"
 import { acpLog } from "./logger.js"
 import { DeltaTracker } from "./delta-tracker.js"
-import { UpdateBuffer } from "./update-buffer.js"
 import { PromptStateMachine } from "./prompt-state.js"
 import { ToolHandlerRegistry } from "./tool-handler.js"
 import { CommandStreamManager } from "./command-stream.js"
@@ -30,7 +30,6 @@ import type {
 	IAcpSession,
 	IAcpLogger,
 	IDeltaTracker,
-	IUpdateBuffer,
 	IPromptStateMachine,
 	AcpSessionDependencies,
 } from "./interfaces.js"
@@ -70,9 +69,6 @@ export class AcpSession implements IAcpSession {
 	/** Delta tracker for streaming content - ensures only new text is sent */
 	private readonly deltaTracker: IDeltaTracker
 
-	/** Update buffer for batching session updates to reduce message frequency */
-	private readonly updateBuffer: IUpdateBuffer
-
 	/** Tool handler registry for polymorphic tool dispatch */
 	private readonly toolHandlerRegistry: ToolHandlerRegistry
 
@@ -91,6 +87,9 @@ export class AcpSession implements IAcpSession {
 	/** Current model ID */
 	private currentModelId: string = DEFAULT_MODELS[0]!.modelId
 
+	/** Track if we're in the process of cancelling a task */
+	private isCancelling: boolean = false
+
 	private constructor(
 		private readonly sessionId: string,
 		private readonly extensionHost: ExtensionHost,
@@ -106,23 +105,13 @@ export class AcpSession implements IAcpSession {
 		this.promptState = deps.createPromptStateMachine?.() ?? new PromptStateMachine({ logger: this.logger })
 		this.deltaTracker = deps.createDeltaTracker?.() ?? new DeltaTracker()
 
-		// Initialize update buffer with the actual send function.
-		// Uses defaults: 200 chars min buffer, 500ms delay.
-		// Wrap sendUpdateDirect to match the expected Promise<void> signature.
-		const sendDirectAdapter = async (update: SessionNotification["update"]): Promise<void> => {
-			await this.sendUpdateDirect(update)
-			// Result is logged internally; adapter converts to void for interface compatibility.
-		}
-
-		this.updateBuffer =
-			deps.createUpdateBuffer?.(sendDirectAdapter) ?? new UpdateBuffer(sendDirectAdapter, { logger: this.logger })
-
 		// Initialize tool handler registry.
 		this.toolHandlerRegistry = new ToolHandlerRegistry()
 
 		// Create send update callback for stream managers.
+		// Updates are sent directly to preserve chunk ordering.
 		const sendUpdate = (update: SessionNotification["update"]) => {
-			void this.sendUpdate(update)
+			void this.sendUpdateDirect(update)
 		}
 
 		// Initialize stream managers with injected logger.
@@ -155,9 +144,48 @@ export class AcpSession implements IAcpSession {
 				this.extensionHost.sendToExtension(message as Parameters<typeof this.extensionHost.sendToExtension>[0]),
 			workspacePath,
 			initialModeId: initialMode,
+			isCancelling: () => this.isCancelling,
 		})
 
 		this.eventHandler.onTaskCompleted((success) => this.handleTaskCompleted(success))
+
+		// Listen for state changes to log and detect cancellation completion
+		this.extensionHost.client.on("stateChange", (event) => {
+			const prev = event.previousState
+			const curr = event.currentState
+
+			// Only log if something actually changed
+			const stateChanged =
+				prev.state !== curr.state ||
+				prev.isRunning !== curr.isRunning ||
+				prev.isStreaming !== curr.isStreaming ||
+				prev.currentAsk !== curr.currentAsk
+
+			if (stateChanged) {
+				this.logger.info(
+					"ExtensionClient",
+					`STATE: ${prev.state} → ${curr.state} (running=${curr.isRunning}, streaming=${curr.isStreaming}, ask=${curr.currentAsk || "none"})`,
+				)
+			}
+
+			// If we're cancelling and the extension transitions to NO_TASK or IDLE, complete the cancellation
+			// NO_TASK: messages were cleared
+			// IDLE: task stopped (e.g., completion_result, api_req_failed, or just stopped)
+			if (this.isCancelling) {
+				const newState = curr.state
+				const isTerminalState =
+					newState === AgentLoopState.NO_TASK ||
+					newState === AgentLoopState.IDLE ||
+					newState === AgentLoopState.RESUMABLE
+
+				// Also check if the agent is no longer running/streaming (it has stopped processing)
+				const hasStopped = !curr.isRunning && !curr.isStreaming
+
+				if (isTerminalState || hasStopped) {
+					this.handleCancellationComplete()
+				}
+			}
+		})
 	}
 
 	// ===========================================================================
@@ -185,9 +213,6 @@ export class AcpSession implements IAcpSession {
 		options: AcpSessionOptions,
 		deps: AcpSessionDependencies = {},
 	): Promise<AcpSession> {
-		const logger = deps.logger ?? acpLog
-		logger.info("Session", `Creating session ${sessionId} in ${cwd}`)
-
 		// Create ExtensionHost with ACP-specific configuration.
 		const hostOptions: ExtensionHostOptions = {
 			mode: options.mode,
@@ -203,10 +228,8 @@ export class AcpSession implements IAcpSession {
 			ephemeral: true,
 		}
 
-		logger.debug("Session", "Creating ExtensionHost", hostOptions)
 		const extensionHost = new ExtensionHost(hostOptions)
 		await extensionHost.activate()
-		logger.info("Session", `ExtensionHost activated for session ${sessionId}`)
 
 		const session = new AcpSession(sessionId, extensionHost, connection, cwd, options.mode, deps)
 		session.setupEventHandlers()
@@ -231,19 +254,35 @@ export class AcpSession implements IAcpSession {
 	 */
 	private resetForNewPrompt(): void {
 		this.eventHandler.reset()
-		this.updateBuffer.reset()
+		this.isCancelling = false
 	}
 
 	/**
 	 * Handle task completion.
 	 */
 	private handleTaskCompleted(success: boolean): void {
-		// Flush any buffered updates before completing.
-		void this.updateBuffer.flush().then(() => {
-			// Complete the prompt using the state machine.
-			const stopReason = this.promptState.complete(success)
-			this.logger.debug("Session", `Resolving prompt with stopReason: ${stopReason}`)
-		})
+		// If we're cancelling, override the stop reason to "cancelled"
+		if (this.isCancelling) {
+			this.handleCancellationComplete()
+		} else {
+			// Normal completion
+			this.promptState.complete(success)
+		}
+	}
+
+	/**
+	 * Handle cancellation completion.
+	 * Called when the extension has finished cancelling (either via taskCompleted or NO_TASK transition).
+	 */
+	private handleCancellationComplete(): void {
+		if (!this.isCancelling) {
+			return // Already handled
+		}
+
+		this.isCancelling = false
+
+		// Directly transition to complete with "cancelled" stop reason
+		this.promptState.transitionToComplete("cancelled")
 	}
 
 	// ===========================================================================
@@ -254,7 +293,31 @@ export class AcpSession implements IAcpSession {
 	 * Process a prompt request from the ACP client.
 	 */
 	async prompt(params: PromptRequest): Promise<PromptResponse> {
-		this.logger.info("Session", `Processing prompt for session ${this.sessionId}`)
+		// Extract text and images from prompt.
+		const text = extractPromptText(params.prompt)
+		const images = extractPromptImages(params.prompt)
+
+		// Check if we're in a resumable state (paused after cancel).
+		// If so, resume the existing conversation instead of starting fresh.
+		const currentState = this.extensionHost.client.getAgentState()
+		if (currentState.state === AgentLoopState.RESUMABLE && currentState.currentAsk === "resume_task") {
+			this.logger.info(
+				"Session",
+				`RESUME TASK: resuming paused task with user input (was ask=${currentState.currentAsk})`,
+			)
+
+			// Reset state for the resumed prompt (but don't cancel - task is already paused)
+			this.eventHandler.reset()
+			this.isCancelling = false
+
+			// Start tracking the prompt
+			const promise = this.promptState.startPrompt(text)
+
+			// Resume the task with the user's message as follow-up
+			this.extensionHost.client.respond(text, images.length > 0 ? images : undefined)
+
+			return promise
+		}
 
 		// Cancel any pending prompt.
 		this.cancel()
@@ -262,20 +325,12 @@ export class AcpSession implements IAcpSession {
 		// Reset state for new prompt.
 		this.resetForNewPrompt()
 
-		// Extract text and images from prompt.
-		const text = extractPromptText(params.prompt)
-		const images = extractPromptImages(params.prompt)
-
-		this.logger.debug("Session", `Prompt text (${text.length} chars), images: ${images.length}`)
-
 		// Start the prompt using the state machine.
 		const promise = this.promptState.startPrompt(text)
 
 		if (images.length > 0) {
-			this.logger.debug("Session", "Starting task with images")
 			this.extensionHost.sendToExtension({ type: "newTask", text, images })
 		} else {
-			this.logger.debug("Session", "Starting task (text only)")
 			this.extensionHost.sendToExtension({ type: "newTask", text })
 		}
 
@@ -287,10 +342,19 @@ export class AcpSession implements IAcpSession {
 	 */
 	cancel(): void {
 		if (this.promptState.isProcessing()) {
-			this.logger.info("Session", "Cancelling pending prompt")
-			this.promptState.cancel()
-			this.logger.info("Session", "Sending cancelTask to extension")
+			// === TEST LOGGING: Cancel triggered ===
+			const currentState = this.extensionHost.client.getAgentState()
+			this.logger.info(
+				"Session",
+				`CANCEL TASK: sending cancelTask (state=${currentState.state}, running=${currentState.isRunning}, streaming=${currentState.isStreaming}, ask=${currentState.currentAsk || "none"})`,
+			)
+
+			this.isCancelling = true
+			// Content continues flowing to the client during cancellation so users
+			// see what the LLM was generating when cancel was triggered.
 			this.extensionHost.sendToExtension({ type: "cancelTask" })
+			// We wait for the extension to send a taskCompleted event or transition to NO_TASK
+			// which will trigger handleTaskCompleted -> promptState.transitionToComplete("cancelled")
 		}
 	}
 
@@ -299,7 +363,6 @@ export class AcpSession implements IAcpSession {
 	 * The mode change is tracked by the event handler which listens to extension state updates.
 	 */
 	setMode(mode: string): void {
-		this.logger.info("Session", `Setting mode to: ${mode}`)
 		this.extensionHost.sendToExtension({ type: "updateSettings", updatedSettings: { mode } })
 	}
 
@@ -308,7 +371,6 @@ export class AcpSession implements IAcpSession {
 	 * This updates the provider settings to use the specified model.
 	 */
 	setModel(modelId: string): void {
-		this.logger.info("Session", `Setting model to: ${modelId}`)
 		this.currentModelId = modelId
 
 		// Map model ID to extension settings
@@ -347,16 +409,12 @@ export class AcpSession implements IAcpSession {
 	 * Dispose of the session and release resources.
 	 */
 	async dispose(): Promise<void> {
-		this.logger.info("Session", `Disposing session ${this.sessionId}`)
 		this.cancel()
 
 		// Clean up event handler listeners
 		this.eventHandler.cleanup()
 
-		// Flush any remaining buffered updates.
-		await this.updateBuffer.flush()
 		await this.extensionHost.dispose()
-		this.logger.info("Session", `Session ${this.sessionId} disposed`)
 	}
 
 	// ===========================================================================
@@ -364,32 +422,14 @@ export class AcpSession implements IAcpSession {
 	// ===========================================================================
 
 	/**
-	 * Send an update to the ACP client through the buffer.
-	 * Text chunks are batched, other updates are sent immediately.
-	 *
-	 * @returns Result indicating success or failure.
-	 */
-	private async sendUpdate(update: SessionNotification["update"]): Promise<Result<void>> {
-		try {
-			await this.updateBuffer.queueUpdate(update)
-			return ok(undefined)
-		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error)
-			this.logger.error("Session", `Failed to queue update: ${errorMessage}`)
-			return err(`Failed to queue update: ${errorMessage}`)
-		}
-	}
-
-	/**
-	 * Send an update directly to the ACP client (bypasses buffer).
-	 * Used by the UpdateBuffer to actually send batched updates.
+	 * Send an update directly to the ACP client.
 	 *
 	 * @returns Result indicating success or failure with error details.
 	 */
 	private async sendUpdateDirect(update: SessionNotification["update"]): Promise<Result<void>> {
 		try {
-			// Log the full update being sent to ACP connection
-			this.logger.debug("Session", `ACP OUT: ${JSON.stringify({ sessionId: this.sessionId, update })}`)
+			// Log the update being sent to ACP connection (commented out - too noisy)
+			// this.logger.info("Session", `OUT: ${JSON.stringify(update)}`)
 			await this.connection.sessionUpdate({ sessionId: this.sessionId, update })
 			return ok(undefined)
 		} catch (error) {

@@ -194,30 +194,6 @@ export interface IExtensionHost {
 }
 
 // =============================================================================
-// Update Buffer Interface
-// =============================================================================
-
-/**
- * Interface for update buffering.
- */
-export interface IUpdateBuffer {
-	/**
-	 * Queue an update for sending.
-	 */
-	queueUpdate(update: acp.SessionNotification["update"]): Promise<void>
-
-	/**
-	 * Flush all pending buffered content.
-	 */
-	flush(): Promise<void>
-
-	/**
-	 * Reset the buffer state.
-	 */
-	reset(): void
-}
-
-// =============================================================================
 // Delta Tracker Interface
 // =============================================================================
 
@@ -305,6 +281,12 @@ export interface IPromptStateMachine {
 	complete(success: boolean): acp.StopReason
 
 	/**
+	 * Transition to completion with a specific stop reason.
+	 * This allows direct control over the stop reason (e.g., for cancellation).
+	 */
+	transitionToComplete(stopReason: acp.StopReason): void
+
+	/**
 	 * Cancel the current prompt.
 	 */
 	cancel(): void
@@ -371,8 +353,6 @@ export interface AcpSessionDependencies {
 	contentFormatter?: IContentFormatter
 	/** Delta tracker factory */
 	createDeltaTracker?: () => IDeltaTracker
-	/** Update buffer factory */
-	createUpdateBuffer?: (sendUpdate: (update: acp.SessionNotification["update"]) => Promise<void>) => IUpdateBuffer
 	/** Prompt state machine factory */
 	createPromptStateMachine?: () => IPromptStateMachine
 }

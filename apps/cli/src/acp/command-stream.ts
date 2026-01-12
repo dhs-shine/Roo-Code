@@ -91,7 +91,6 @@ export class CommandStreamManager {
 	 */
 	trackCommand(toolCallId: string, command: string, ts: number): void {
 		this.pendingCommandCalls.set(toolCallId, { toolCallId, command, ts })
-		this.logger.debug("CommandStream", `Tracking command: ${toolCallId}`)
 	}
 
 	/**
@@ -107,11 +106,6 @@ export class CommandStreamManager {
 		const output = message.text || ""
 		const isPartial = message.partial === true
 
-		this.logger.debug(
-			"CommandStream",
-			`handleCommandOutput: partial=${message.partial}, text length=${output.length}`,
-		)
-
 		// Skip partial updates - streaming is handled by handleExecutionOutput()
 		if (isPartial) {
 			return
@@ -121,12 +115,9 @@ export class CommandStreamManager {
 		const pendingCall = this.findMostRecentPendingCommand()
 
 		if (pendingCall) {
-			this.logger.debug("CommandStream", `Command completed: ${pendingCall.toolCallId}`)
-
 			// Send closing code fence as agent_message_chunk if we had streaming output
 			const hadStreamingOutput = this.commandCodeFencesSent.has(pendingCall.toolCallId)
 			if (hadStreamingOutput) {
-				this.logger.debug("CommandStream", "Sending closing code fence via agent_message_chunk")
 				this.sendUpdate({
 					sessionUpdate: "agent_message_chunk",
 					content: { type: "text", text: "```\n" },
@@ -161,11 +152,6 @@ export class CommandStreamManager {
 	 * Uses executionId → toolCallId mapping for robust routing.
 	 */
 	handleExecutionOutput(executionId: string, output: string): void {
-		this.logger.debug(
-			"CommandStream",
-			`handleExecutionOutput: executionId=${executionId}, output length=${output.length}`,
-		)
-
 		// Find or establish the toolCallId for this executionId
 		let toolCallId = this.executionToToolCallId.get(executionId)
 
@@ -173,12 +159,10 @@ export class CommandStreamManager {
 			// First output for this executionId - establish the mapping
 			const pendingCall = this.findMostRecentPendingCommand()
 			if (!pendingCall) {
-				this.logger.debug("CommandStream", "No pending command, skipping execution output")
 				return
 			}
 			toolCallId = pendingCall.toolCallId
 			this.executionToToolCallId.set(executionId, toolCallId)
-			this.logger.debug("CommandStream", `Mapped executionId ${executionId} → toolCallId ${toolCallId}`)
 		}
 
 		// Use executionId as the message key for delta tracking
@@ -191,7 +175,6 @@ export class CommandStreamManager {
 		const isFirstChunk = !this.commandCodeFencesSent.has(toolCallId)
 		if (isFirstChunk) {
 			this.commandCodeFencesSent.add(toolCallId)
-			this.logger.debug("CommandStream", `Sending opening code fence for toolCallId ${toolCallId}`)
 			this.sendUpdate({
 				sessionUpdate: "agent_message_chunk",
 				content: { type: "text", text: "```\n" },
@@ -199,7 +182,6 @@ export class CommandStreamManager {
 		}
 
 		// Send the delta as agent_message_chunk for Zed visibility
-		this.logger.debug("CommandStream", `Streaming command output via agent_message_chunk: ${delta.length} chars`)
 		this.sendUpdate({
 			sessionUpdate: "agent_message_chunk",
 			content: { type: "text", text: delta },
@@ -220,14 +202,9 @@ export class CommandStreamManager {
 	reset(): void {
 		// Clear all pending commands - any from previous prompts are now stale
 		// and would cause duplicate completion messages if not cleaned up
-		const staleCount = this.pendingCommandCalls.size
-		if (staleCount > 0) {
-			this.logger.debug("CommandStream", `Clearing ${staleCount} stale pending commands`)
-		}
 		this.pendingCommandCalls.clear()
 		this.commandCodeFencesSent.clear()
 		this.executionToToolCallId.clear()
-		this.logger.debug("CommandStream", "Reset command stream state")
 	}
 
 	/**

@@ -37,6 +37,7 @@ import { ExtensionClient } from "./extension-client.js"
 import { OutputManager } from "./output-manager.js"
 import { PromptManager } from "./prompt-manager.js"
 import { AskDispatcher } from "./ask-dispatcher.js"
+import { testLog } from "./test-logger.js"
 
 // Pre-configured logger for CLI message activity debugging.
 const cliLogger = new DebugLogger("CLI")
@@ -246,8 +247,33 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 	 * The client emits events, managers handle them.
 	 */
 	private setupClientEventHandlers(): void {
+		// === TEST LOGGING: State changes (matches ACP session.ts logging) ===
+		this.client.on("stateChange", (event) => {
+			const prev = event.previousState
+			const curr = event.currentState
+
+			// Only log if something actually changed
+			const stateChanged =
+				prev.state !== curr.state ||
+				prev.isRunning !== curr.isRunning ||
+				prev.isStreaming !== curr.isStreaming ||
+				prev.currentAsk !== curr.currentAsk
+
+			if (stateChanged) {
+				testLog.info(
+					"ExtensionClient",
+					`STATE: ${prev.state} → ${curr.state} (running=${curr.isRunning}, streaming=${curr.isStreaming}, ask=${curr.currentAsk || "none"})`,
+				)
+			}
+		})
+
 		// Handle new messages - delegate to OutputManager.
 		this.client.on("message", (msg: ClineMessage) => {
+			// === TEST LOGGING: New messages ===
+			const msgType = msg.type === "say" ? `say:${msg.say}` : `ask:${msg.ask}`
+			const partial = msg.partial ? "PARTIAL" : "COMPLETE"
+			testLog.info("ExtensionClient", `MSG NEW: ${msgType} ${partial} ts=${msg.ts}`)
+
 			this.logMessageDebug(msg, "new")
 			// DEBUG: Log all incoming messages with timestamp (only when -d flag is set)
 			if (this.options.debug) {
@@ -261,6 +287,11 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 
 		// Handle message updates - delegate to OutputManager.
 		this.client.on("messageUpdated", (msg: ClineMessage) => {
+			// === TEST LOGGING: Message updates ===
+			const msgType = msg.type === "say" ? `say:${msg.say}` : `ask:${msg.ask}`
+			const partial = msg.partial ? "PARTIAL" : "COMPLETE"
+			testLog.info("ExtensionClient", `MSG UPDATE: ${msgType} ${partial} ts=${msg.ts}`)
+
 			this.logMessageDebug(msg, "updated")
 			// DEBUG: Log all message updates with timestamp (only when -d flag is set)
 			if (this.options.debug) {
@@ -274,11 +305,16 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 
 		// Handle waiting for input - delegate to AskDispatcher.
 		this.client.on("waitingForInput", (event: WaitingForInputEvent) => {
+			// === TEST LOGGING: Waiting for input ===
+			testLog.info("ExtensionClient", `WAITING FOR INPUT: ask=${event.ask}`)
 			this.askDispatcher.handleAsk(event.message)
 		})
 
 		// Handle task completion.
 		this.client.on("taskCompleted", (event: TaskCompletedEvent) => {
+			// === TEST LOGGING: Task completed ===
+			testLog.info("ExtensionClient", `TASK COMPLETED: success=${event.success}`)
+
 			// Output completion message via OutputManager.
 			// Note: completion_result is an "ask" type, not a "say" type.
 			if (event.message && event.message.type === "ask" && event.message.ask === "completion_result") {
@@ -453,6 +489,17 @@ export class ExtensionHost extends EventEmitter implements ExtensionHostInterfac
 	public sendToExtension(message: WebviewMessage): void {
 		if (!this.isReady) {
 			throw new Error("You cannot send messages to the extension before it is ready")
+		}
+
+		// === TEST LOGGING: Track outgoing messages to extension (especially cancelTask) ===
+		if (message.type === "cancelTask") {
+			const currentState = this.client.getAgentState()
+			testLog.info(
+				"ExtensionHost",
+				`SEND TO EXT: cancelTask (state=${currentState.state}, running=${currentState.isRunning}, streaming=${currentState.isStreaming}, ask=${currentState.currentAsk || "none"})`,
+			)
+		} else if (message.type === "askResponse") {
+			testLog.info("ExtensionHost", `SEND TO EXT: askResponse (response=${message.askResponse})`)
 		}
 
 		this.emit("webviewMessage", message)

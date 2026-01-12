@@ -16,7 +16,6 @@ export type {
 	IContentFormatter,
 	IExtensionClient,
 	IExtensionHost,
-	IUpdateBuffer,
 	IDeltaTracker,
 	IPromptStateMachine,
 	ICommandStreamManager,
@@ -34,7 +33,6 @@ export { acpLog } from "./logger.js"
 
 // Utilities
 export { DeltaTracker } from "./delta-tracker.js"
-export { UpdateBuffer, type UpdateBufferOptions } from "./update-buffer.js"
 
 // Shared utility functions
 export {

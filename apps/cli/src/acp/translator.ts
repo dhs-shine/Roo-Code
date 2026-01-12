@@ -9,6 +9,7 @@
  * - translator/prompt-extractor.ts: Prompt content extraction
  * - translator/tool-parser.ts: Tool information parsing
  * - translator/message-translator.ts: Main message translation
+ * - translator/plan-translator.ts: TodoItem to ACP PlanEntry translation
  *
  * Import from this file or directly from translator/index.ts
  */
@@ -40,4 +41,16 @@ export {
 	createPermissionOptions,
 	// Backward compatibility
 	mapToolKind,
+	// Plan translation (TodoItem to ACP PlanEntry)
+	todoItemToPlanEntry,
+	todoListToPlanUpdate,
+	parseTodoListFromMessage,
+	isTodoListMessage,
+	extractTodoListFromMessage,
+	createPlanUpdateFromMessage,
+	type PlanEntry,
+	type PlanEntryPriority,
+	type PlanEntryStatus,
+	type PlanUpdate,
+	type PriorityConfig,
 } from "./translator/index.js"

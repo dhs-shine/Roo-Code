@@ -10,6 +10,7 @@
  * - prompt-extractor: Prompt content extraction
  * - tool-parser: Tool information parsing
  * - message-translator: Main message translation
+ * - plan-translator: TodoItem to ACP PlanEntry translation
  */
 
 // Diff parsing
@@ -41,3 +42,18 @@ export {
 // Re-export mapToolKind for backward compatibility
 // (now uses mapToolToKind from tool-registry internally)
 export { mapToolToKind as mapToolKind } from "../tool-registry.js"
+
+// Plan translation (TodoItem to ACP PlanEntry)
+export {
+	todoItemToPlanEntry,
+	todoListToPlanUpdate,
+	parseTodoListFromMessage,
+	isTodoListMessage,
+	extractTodoListFromMessage,
+	createPlanUpdateFromMessage,
+	type PlanEntry,
+	type PlanEntryPriority,
+	type PlanEntryStatus,
+	type PlanUpdate,
+	type PriorityConfig,
+} from "./plan-translator.js"

@@ -1,12 +1,28 @@
 import type * as acp from "@agentclientprotocol/sdk"
+import { AgentLoopState } from "@/agent/agent-state.js"
+
+// Track registered event handlers for simulation
+type EventHandler = (data: unknown) => void
+const clientEventHandlers: Map<string, EventHandler[]> = new Map()
 
 vi.mock("@/agent/extension-host.js", () => {
 	const mockClient = {
-		on: vi.fn().mockReturnThis(),
+		on: vi.fn().mockImplementation((event: string, handler: EventHandler) => {
+			const handlers = clientEventHandlers.get(event) || []
+			handlers.push(handler)
+			clientEventHandlers.set(event, handlers)
+			return mockClient
+		}),
 		off: vi.fn().mockReturnThis(),
 		respond: vi.fn(),
 		approve: vi.fn(),
 		reject: vi.fn(),
+		getAgentState: vi.fn().mockReturnValue({
+			state: AgentLoopState.RUNNING,
+			isRunning: true,
+			isStreaming: false,
+			currentAsk: null,
+		}),
 	}
 
 	return {
@@ -21,6 +37,19 @@ vi.mock("@/agent/extension-host.js", () => {
 		})),
 	}
 })
+
+/**
+ * Simulate the extension responding to a cancel by emitting a state change to a terminal state.
+ */
+function simulateExtensionCancelResponse(): void {
+	const handlers = clientEventHandlers.get("stateChange") || []
+	handlers.forEach((handler) => {
+		handler({
+			previousState: { state: AgentLoopState.RUNNING, isRunning: true, isStreaming: false },
+			currentState: { state: AgentLoopState.IDLE, isRunning: false, isStreaming: false },
+		})
+	})
+}
 
 import { AcpSession, type AcpSessionOptions } from "../session.js"
 import { ExtensionHost } from "@/agent/extension-host.js"
@@ -37,6 +66,9 @@ describe("AcpSession", () => {
 	}
 
 	beforeEach(() => {
+		// Clear registered event handlers between tests
+		clientEventHandlers.clear()
+
 		mockConnection = {
 			sessionUpdate: vi.fn().mockResolvedValue(undefined),
 			requestPermission: vi.fn().mockResolvedValue({
@@ -56,6 +88,7 @@ describe("AcpSession", () => {
 
 	afterEach(() => {
 		vi.clearAllMocks()
+		clientEventHandlers.clear()
 	})
 
 	describe("create", () => {
@@ -140,8 +173,9 @@ describe("AcpSession", () => {
 				}),
 			)
 
-			// Cancel to resolve the promise
+			// Cancel to resolve the promise - simulate extension responding to cancel
 			session.cancel()
+			simulateExtensionCancelResponse()
 			const result = await promptPromise
 			expect(result.stopReason).toBe("cancelled")
 		})
@@ -174,6 +208,7 @@ describe("AcpSession", () => {
 			)
 
 			session.cancel()
+			simulateExtensionCancelResponse()
 			await promptPromise
 		})
 	})
@@ -196,8 +231,9 @@ describe("AcpSession", () => {
 				prompt: [{ type: "text", text: "Hello" }],
 			})
 
-			// Cancel
+			// Cancel and simulate extension responding
 			session.cancel()
+			simulateExtensionCancelResponse()
 
 			expect(mockHostInstance.sendToExtension).toHaveBeenCalledWith({ type: "cancelTask" })
 

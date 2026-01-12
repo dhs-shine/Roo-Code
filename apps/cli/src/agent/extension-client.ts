@@ -39,6 +39,7 @@ import {
 	type ModeChangedEvent,
 } from "./events.js"
 import { AgentLoopState, type AgentStateInfo } from "./agent-state.js"
+import { testLog } from "./test-logger.js"
 
 // =============================================================================
 // Extension Client Configuration
@@ -429,6 +430,13 @@ export class ExtensionClient {
 	 * Use this to interrupt a task that is currently processing.
 	 */
 	cancelTask(): void {
+		// === TEST LOGGING: Cancel triggered ===
+		const currentState = this.store.getAgentState()
+		testLog.info(
+			"ExtensionClient",
+			`CANCEL TASK: sending cancelTask (state=${currentState.state}, running=${currentState.isRunning}, streaming=${currentState.isStreaming}, ask=${currentState.currentAsk || "none"})`,
+		)
+
 		const message: WebviewMessage = {
 			type: "cancelTask",
 		}
