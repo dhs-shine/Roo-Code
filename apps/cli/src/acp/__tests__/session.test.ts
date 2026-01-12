@@ -15,6 +15,9 @@ vi.mock("@/agent/extension-host.js", () => {
 			activate: vi.fn().mockResolvedValue(undefined),
 			dispose: vi.fn().mockResolvedValue(undefined),
 			sendToExtension: vi.fn(),
+			// Add on/off methods for extension host events (e.g., extensionWebviewMessage)
+			on: vi.fn().mockReturnThis(),
+			off: vi.fn().mockReturnThis(),
 		})),
 	}
 })

@@ -2,6 +2,13 @@
 export { type RooCodeAgentOptions, RooCodeAgent } from "./agent.js"
 export { type AcpSessionOptions, AcpSession } from "./session.js"
 
+// Types for mode and model pickers
+export type { AcpModel, AcpModelState, ExtendedNewSessionResponse } from "./types.js"
+export { DEFAULT_MODELS } from "./types.js"
+
+// Model service
+export { ModelService, createModelService, type ModelServiceOptions } from "./model-service.js"
+
 // Interfaces for dependency injection
 export type {
 	IAcpLogger,

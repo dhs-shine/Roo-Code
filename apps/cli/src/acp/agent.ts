@@ -13,6 +13,9 @@ import { DEFAULT_FLAGS } from "@/types/constants.js"
 
 import { AcpSession, type AcpSessionOptions } from "./session.js"
 import { acpLog } from "./logger.js"
+import { ModelService, createModelService } from "./model-service.js"
+import { type ExtendedNewSessionResponse, type AcpModelState, DEFAULT_MODELS } from "./types.js"
+import { envVarMap } from "@/lib/utils/provider.js"
 
 // =============================================================================
 // Types
@@ -30,15 +33,6 @@ export interface RooCodeAgentOptions {
 	/** Initial mode (defaults to code) */
 	mode?: string
 }
-
-// =============================================================================
-// Auth Method IDs
-// =============================================================================
-
-const AUTH_METHODS = {
-	ROO_CLOUD: "roo-cloud",
-	API_KEY: "api-key",
-} as const
 
 // =============================================================================
 // Available Modes
@@ -81,11 +75,17 @@ export class RooCodeAgent implements acp.Agent {
 	private sessions: Map<string, AcpSession> = new Map()
 	private clientCapabilities: acp.ClientCapabilities | undefined
 	private isAuthenticated = false
+	private readonly modelService: ModelService
 
 	constructor(
 		private readonly options: RooCodeAgentOptions,
 		private readonly connection: acp.AgentSideConnection,
-	) {}
+	) {
+		// Initialize model service with optional API key
+		this.modelService = createModelService({
+			apiKey: options.apiKey,
+		})
+	}
 
 	// ===========================================================================
 	// Initialization
@@ -109,14 +109,9 @@ export class RooCodeAgent implements acp.Agent {
 			protocolVersion: acp.PROTOCOL_VERSION,
 			authMethods: [
 				{
-					id: AUTH_METHODS.ROO_CLOUD,
+					id: "roo",
 					name: "Sign in with Roo Code Cloud",
-					description: "Sign in with your Roo Code Cloud account for access to all features",
-				},
-				{
-					id: AUTH_METHODS.API_KEY,
-					name: "Use API Key",
-					description: "Use an API key directly (set OPENROUTER_API_KEY or similar environment variable)",
+					description: `Sign in with your Roo Code Cloud account or BYOK by exporting an API key Environment Variable (${Object.values(envVarMap).join(", ")})`,
 				},
 			],
 			agentCapabilities: {
@@ -137,44 +132,16 @@ export class RooCodeAgent implements acp.Agent {
 	// ===========================================================================
 
 	/**
-	 * Authenticate with the specified method.
+	 * Authenticate with Roo Code Cloud.
 	 */
-	async authenticate(params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse | void> {
-		acpLog.request("authenticate", { methodId: params.methodId })
+	async authenticate(_params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse | void> {
+		const result = await login({ verbose: false })
 
-		switch (params.methodId) {
-			case AUTH_METHODS.ROO_CLOUD: {
-				acpLog.info("Agent", "Starting Roo Code Cloud login flow")
-				// Trigger Roo Code Cloud login flow
-				const result = await login({ verbose: false })
-				if (!result.success) {
-					acpLog.error("Agent", "Roo Code Cloud login failed")
-					throw acp.RequestError.authRequired(undefined, "Failed to authenticate with Roo Code Cloud")
-				}
-				this.isAuthenticated = true
-				acpLog.info("Agent", "Roo Code Cloud login successful")
-				break
-			}
-
-			case AUTH_METHODS.API_KEY: {
-				// API key authentication - verify key exists
-				const apiKey = this.options.apiKey || process.env.OPENROUTER_API_KEY
-				if (!apiKey) {
-					acpLog.error("Agent", "No API key found")
-					throw acp.RequestError.authRequired(
-						undefined,
-						"No API key found. Set OPENROUTER_API_KEY environment variable.",
-					)
-				}
-				this.isAuthenticated = true
-				acpLog.info("Agent", "API key authentication successful")
-				break
-			}
-
-			default:
-				acpLog.error("Agent", `Unknown auth method: ${params.methodId}`)
-				throw acp.RequestError.invalidParams(undefined, `Unknown auth method: ${params.methodId}`)
+		if (!result.success) {
+			throw acp.RequestError.authRequired(undefined, "Failed to authenticate with Roo Code Cloud")
 		}
+
+		this.isAuthenticated = true
 
 		acpLog.response("authenticate", {})
 		return {}
@@ -187,7 +154,7 @@ export class RooCodeAgent implements acp.Agent {
 	/**
 	 * Create a new session.
 	 */
-	async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+	async newSession(params: acp.NewSessionRequest): Promise<ExtendedNewSessionResponse> {
 		acpLog.request("newSession", { cwd: params.cwd })
 
 		// Require authentication
@@ -202,6 +169,7 @@ export class RooCodeAgent implements acp.Agent {
 		}
 
 		const sessionId = randomUUID()
+		const initialMode = this.options.mode || "code"
 		acpLog.info("Agent", `Creating new session: ${sessionId}`)
 
 		const sessionOptions: AcpSessionOptions = {
@@ -209,7 +177,7 @@ export class RooCodeAgent implements acp.Agent {
 			provider: this.options.provider || "openrouter",
 			apiKey: this.options.apiKey || process.env.OPENROUTER_API_KEY,
 			model: this.options.model || DEFAULT_FLAGS.model,
-			mode: this.options.mode || "code",
+			mode: initialMode,
 		}
 
 		acpLog.debug("Agent", "Session options", {
@@ -230,9 +198,29 @@ export class RooCodeAgent implements acp.Agent {
 		this.sessions.set(sessionId, session)
 		acpLog.info("Agent", `Session created successfully: ${sessionId}`)
 
-		const response = { sessionId }
+		// Fetch model state asynchronously (don't block session creation)
+		const modelState = await this.getModelState()
+
+		// Build response with modes and models
+		const response: ExtendedNewSessionResponse = {
+			sessionId,
+			modes: {
+				currentModeId: initialMode,
+				availableModes: AVAILABLE_MODES,
+			},
+			models: modelState,
+		}
+
 		acpLog.response("newSession", response)
 		return response
+	}
+
+	/**
+	 * Get the current model state.
+	 */
+	private async getModelState(): Promise<AcpModelState> {
+		const currentModelId = this.options.model || DEFAULT_MODELS[0]!.modelId
+		return this.modelService.getModelState(currentModelId)
 	}
 
 	// ===========================================================================

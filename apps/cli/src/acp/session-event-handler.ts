@@ -1,11 +1,12 @@
 /**
  * Session Event Handler
  *
- * Handles events from the ExtensionClient and translates them to ACP updates.
+ * Handles events from the ExtensionClient and ExtensionHost, translating them to ACP updates.
  * Extracted from session.ts for better separation of concerns.
  */
 
-import type { ClineMessage, ClineAsk, ClineSay } from "@roo-code/types"
+import type { SessionMode } from "@agentclientprotocol/sdk"
+import type { ClineMessage, ClineAsk, ClineSay, ExtensionMessage, ExtensionState, ModeConfig } from "@roo-code/types"
 
 import type { WaitingForInputEvent, TaskCompletedEvent, CommandExecutionOutputEvent } from "@/agent/events.js"
 
@@ -14,6 +15,7 @@ import { isUserEcho } from "./utils/index.js"
 import type {
 	IAcpLogger,
 	IExtensionClient,
+	IExtensionHost,
 	IPromptStateMachine,
 	ICommandStreamManager,
 	IToolContentStreamManager,
@@ -96,6 +98,8 @@ export interface SessionEventHandlerDeps {
 	logger: IAcpLogger
 	/** Extension client for event subscription */
 	client: IExtensionClient
+	/** Extension host for host-level events (modes, etc.) */
+	extensionHost: IExtensionHost
 	/** Prompt state machine */
 	promptState: IPromptStateMachine
 	/** Delta tracker for streaming */
@@ -116,6 +120,8 @@ export interface SessionEventHandlerDeps {
 	sendToExtension: (message: unknown) => void
 	/** Workspace path */
 	workspacePath: string
+	/** Initial mode ID */
+	initialModeId: string
 }
 
 /**
@@ -123,22 +129,30 @@ export interface SessionEventHandlerDeps {
  */
 export type TaskCompletedCallback = (success: boolean) => void
 
+/**
+ * Callback for mode changes.
+ */
+export type ModeChangedCallback = (modeId: string, availableModes: SessionMode[]) => void
+
 // =============================================================================
 // SessionEventHandler Class
 // =============================================================================
 
 /**
- * Handles events from the ExtensionClient and translates them to ACP updates.
+ * Handles events from the ExtensionClient and ExtensionHost, translating them to ACP updates.
  *
  * Responsibilities:
  * - Subscribe to extension client events
+ * - Subscribe to extension host events (mode changes, etc.)
  * - Handle streaming for text/reasoning messages
  * - Handle tool permission requests
  * - Handle task completion
+ * - Track mode state changes
  */
 export class SessionEventHandler {
 	private readonly logger: IAcpLogger
 	private readonly client: IExtensionClient
+	private readonly extensionHost: IExtensionHost
 	private readonly promptState: IPromptStateMachine
 	private readonly deltaTracker: IDeltaTracker
 	private readonly commandStreamManager: ICommandStreamManager
@@ -151,6 +165,16 @@ export class SessionEventHandler {
 	private readonly workspacePath: string
 
 	private taskCompletedCallback: TaskCompletedCallback | null = null
+	private modeChangedCallback: ModeChangedCallback | null = null
+
+	/** Current mode ID (Roo Code mode like 'code', 'architect', etc.) */
+	private currentModeId: string
+
+	/** Available modes from extension state */
+	private availableModes: SessionMode[] = []
+
+	/** Listener for extension host messages */
+	private extensionMessageListener: ((msg: unknown) => void) | null = null
 
 	/**
 	 * Track processed permission requests to prevent duplicates.
@@ -163,6 +187,7 @@ export class SessionEventHandler {
 	constructor(deps: SessionEventHandlerDeps) {
 		this.logger = deps.logger
 		this.client = deps.client
+		this.extensionHost = deps.extensionHost
 		this.promptState = deps.promptState
 		this.deltaTracker = deps.deltaTracker
 		this.commandStreamManager = deps.commandStreamManager
@@ -173,6 +198,7 @@ export class SessionEventHandler {
 		this.respondWithText = deps.respondWithText
 		this.sendToExtension = deps.sendToExtension
 		this.workspacePath = deps.workspacePath
+		this.currentModeId = deps.initialModeId
 	}
 
 	// ===========================================================================
@@ -180,7 +206,7 @@ export class SessionEventHandler {
 	// ===========================================================================
 
 	/**
-	 * Set up event handlers to translate ExtensionClient events to ACP updates.
+	 * Set up event handlers to translate ExtensionClient and ExtensionHost events to ACP updates.
 	 */
 	setupEventHandlers(): void {
 		// Handle new messages
@@ -208,6 +234,12 @@ export class SessionEventHandler {
 		this.client.on("taskCompleted", (event: unknown) => {
 			this.handleTaskCompleted(event as TaskCompletedEvent)
 		})
+
+		// Handle extension host messages (modes, state, etc.)
+		this.extensionMessageListener = (msg: unknown) => {
+			this.handleExtensionMessage(msg as ExtensionMessage)
+		}
+		this.extensionHost.on("extensionWebviewMessage", this.extensionMessageListener)
 	}
 
 	/**
@@ -218,6 +250,27 @@ export class SessionEventHandler {
 	}
 
 	/**
+	 * Set the callback for mode changes.
+	 */
+	onModeChanged(callback: ModeChangedCallback): void {
+		this.modeChangedCallback = callback
+	}
+
+	/**
+	 * Get the current mode ID.
+	 */
+	getCurrentModeId(): string {
+		return this.currentModeId
+	}
+
+	/**
+	 * Get the available modes.
+	 */
+	getAvailableModes(): SessionMode[] {
+		return this.availableModes
+	}
+
+	/**
 	 * Reset state for a new prompt.
 	 */
 	reset(): void {
@@ -225,6 +278,16 @@ export class SessionEventHandler {
 		this.commandStreamManager.reset()
 		this.toolContentStreamManager.reset()
 		this.processedPermissions.clear()
+	}
+
+	/**
+	 * Clean up event listeners.
+	 */
+	cleanup(): void {
+		if (this.extensionMessageListener) {
+			this.extensionHost.off("extensionWebviewMessage", this.extensionMessageListener)
+			this.extensionMessageListener = null
+		}
 	}
 
 	// ===========================================================================
@@ -416,6 +479,63 @@ export class SessionEventHandler {
 		if (this.taskCompletedCallback) {
 			this.taskCompletedCallback(event.success)
 		}
+	}
+
+	// ===========================================================================
+	// Extension Message Handling (Modes, State)
+	// ===========================================================================
+
+	/**
+	 * Handle extension messages for mode and state updates.
+	 */
+	private handleExtensionMessage(msg: ExtensionMessage): void {
+		// Handle "modes" message - list of available modes
+		if (msg.type === "modes" && msg.modes) {
+			this.logger.debug("SessionEventHandler", `Received modes: ${msg.modes.length} modes`)
+			this.availableModes = msg.modes.map((m) => ({
+				id: m.slug,
+				name: m.name,
+				description: undefined,
+			}))
+		}
+
+		// Handle "state" message - includes current mode
+		if (msg.type === "state" && msg.state) {
+			const state = msg.state as ExtensionState
+			if (state.mode && state.mode !== this.currentModeId) {
+				const previousMode = this.currentModeId
+				this.currentModeId = state.mode
+				this.logger.info("SessionEventHandler", `Mode changed: ${previousMode} -> ${this.currentModeId}`)
+
+				// Send mode update notification
+				this.sendUpdate({
+					sessionUpdate: "current_mode_update",
+					currentModeId: this.currentModeId,
+				})
+
+				// Notify callback
+				if (this.modeChangedCallback) {
+					this.modeChangedCallback(this.currentModeId, this.availableModes)
+				}
+			}
+
+			// Update available modes from customModes
+			if (state.customModes && Array.isArray(state.customModes)) {
+				this.updateAvailableModesFromConfig(state.customModes as ModeConfig[])
+			}
+		}
+	}
+
+	/**
+	 * Update available modes from ModeConfig array.
+	 */
+	private updateAvailableModesFromConfig(modes: ModeConfig[]): void {
+		this.availableModes = modes.map((m) => ({
+			id: m.slug,
+			name: m.name,
+			description: undefined,
+		}))
+		this.logger.debug("SessionEventHandler", `Updated available modes: ${this.availableModes.length} modes`)
 	}
 }
 

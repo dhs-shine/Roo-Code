@@ -10,11 +10,13 @@ import {
 	type ClientCapabilities,
 	type PromptRequest,
 	type PromptResponse,
+	type SessionModeState,
 	AgentSideConnection,
 } from "@agentclientprotocol/sdk"
 
 import { type ExtensionHostOptions, ExtensionHost } from "@/agent/extension-host.js"
 
+import { DEFAULT_MODELS } from "./types.js"
 import { extractPromptText, extractPromptImages } from "./translator.js"
 import { acpLog } from "./logger.js"
 import { DeltaTracker } from "./delta-tracker.js"
@@ -86,11 +88,15 @@ export class AcpSession implements IAcpSession {
 	/** Workspace path for resolving relative file paths */
 	private readonly workspacePath: string
 
+	/** Current model ID */
+	private currentModelId: string = DEFAULT_MODELS[0]!.modelId
+
 	private constructor(
 		private readonly sessionId: string,
 		private readonly extensionHost: ExtensionHost,
 		private readonly connection: AgentSideConnection,
 		workspacePath: string,
+		initialMode: string,
 		deps: AcpSessionDependencies = {},
 	) {
 		this.workspacePath = workspacePath
@@ -132,9 +138,11 @@ export class AcpSession implements IAcpSession {
 			logger: this.logger,
 		})
 
+		// Create event handler with extension host for mode tracking
 		this.eventHandler = createSessionEventHandler({
 			logger: this.logger,
 			client: extensionHost.client,
+			extensionHost,
 			promptState: this.promptState,
 			deltaTracker: this.deltaTracker,
 			commandStreamManager: this.commandStreamManager,
@@ -146,6 +154,7 @@ export class AcpSession implements IAcpSession {
 			sendToExtension: (message) =>
 				this.extensionHost.sendToExtension(message as Parameters<typeof this.extensionHost.sendToExtension>[0]),
 			workspacePath,
+			initialModeId: initialMode,
 		})
 
 		this.eventHandler.onTaskCompleted((success) => this.handleTaskCompleted(success))
@@ -199,7 +208,7 @@ export class AcpSession implements IAcpSession {
 		await extensionHost.activate()
 		logger.info("Session", `ExtensionHost activated for session ${sessionId}`)
 
-		const session = new AcpSession(sessionId, extensionHost, connection, cwd, deps)
+		const session = new AcpSession(sessionId, extensionHost, connection, cwd, options.mode, deps)
 		session.setupEventHandlers()
 
 		return session
@@ -211,6 +220,7 @@ export class AcpSession implements IAcpSession {
 
 	/**
 	 * Set up event handlers to translate ExtensionClient events to ACP updates.
+	 * This includes both ExtensionClient events and ExtensionHost events (modes, state).
 	 */
 	private setupEventHandlers(): void {
 		this.eventHandler.setupEventHandlers()
@@ -285,11 +295,52 @@ export class AcpSession implements IAcpSession {
 	}
 
 	/**
-	 * Set the session mode.
+	 * Set the session mode (Roo Code operational mode like 'code', 'architect').
+	 * The mode change is tracked by the event handler which listens to extension state updates.
 	 */
 	setMode(mode: string): void {
 		this.logger.info("Session", `Setting mode to: ${mode}`)
 		this.extensionHost.sendToExtension({ type: "updateSettings", updatedSettings: { mode } })
+	}
+
+	/**
+	 * Set the current model.
+	 * This updates the provider settings to use the specified model.
+	 */
+	setModel(modelId: string): void {
+		this.logger.info("Session", `Setting model to: ${modelId}`)
+		this.currentModelId = modelId
+
+		// Map model ID to extension settings
+		// The property is apiModelId for most providers
+		this.extensionHost.sendToExtension({
+			type: "updateSettings",
+			updatedSettings: { apiModelId: modelId },
+		})
+	}
+
+	/**
+	 * Get the current mode state (delegated to event handler).
+	 */
+	getModeState(): SessionModeState {
+		return {
+			currentModeId: this.eventHandler.getCurrentModeId(),
+			availableModes: this.eventHandler.getAvailableModes(),
+		}
+	}
+
+	/**
+	 * Get the current mode ID (delegated to event handler).
+	 */
+	getCurrentModeId(): string {
+		return this.eventHandler.getCurrentModeId()
+	}
+
+	/**
+	 * Get the current model ID.
+	 */
+	getCurrentModelId(): string {
+		return this.currentModelId
 	}
 
 	/**
@@ -298,6 +349,9 @@ export class AcpSession implements IAcpSession {
 	async dispose(): Promise<void> {
 		this.logger.info("Session", `Disposing session ${this.sessionId}`)
 		this.cancel()
+
+		// Clean up event handler listeners
+		this.eventHandler.cleanup()
 
 		// Flush any remaining buffered updates.
 		await this.updateBuffer.flush()

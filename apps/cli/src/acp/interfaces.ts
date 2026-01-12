@@ -152,6 +152,13 @@ export interface IExtensionClient {
 // =============================================================================
 
 /**
+ * Events emitted by the extension host.
+ */
+export interface ExtensionHostEvents {
+	extensionWebviewMessage: (msg: unknown) => void
+}
+
+/**
  * Interface for extension host interactions.
  */
 export interface IExtensionHost {
@@ -159,6 +166,16 @@ export interface IExtensionHost {
 	 * Get the extension client for event handling.
 	 */
 	readonly client: IExtensionClient
+
+	/**
+	 * Subscribe to extension host events.
+	 */
+	on<K extends keyof ExtensionHostEvents>(event: K, handler: ExtensionHostEvents[K]): void
+
+	/**
+	 * Unsubscribe from extension host events.
+	 */
+	off<K extends keyof ExtensionHostEvents>(event: K, handler: ExtensionHostEvents[K]): void
 
 	/**
 	 * Activate the extension host.
