@@ -6,6 +6,8 @@
 
 import type * as acp from "@agentclientprotocol/sdk"
 
+import { DEFAULT_FLAGS } from "@/types/constants.js"
+
 // =============================================================================
 // Model Types
 // =============================================================================
@@ -53,17 +55,18 @@ export interface ExtendedNewSessionResponse extends acp.NewSessionResponse {
 /**
  * Default models available when API is not accessible.
  * These map to Roo Code Cloud model tiers.
+ * The first model uses DEFAULT_FLAGS.model as the source of truth.
  */
 export const DEFAULT_MODELS: AcpModel[] = [
+	{
+		modelId: DEFAULT_FLAGS.model,
+		name: "Claude Sonnet 4.5",
+		description: "Best balance of speed and capability",
+	},
 	{
 		modelId: "anthropic/claude-opus-4.5",
 		name: "Claude Opus 4.5",
 		description: "Most capable for complex work",
-	},
-	{
-		modelId: "anthropic/claude-sonnet-4.5",
-		name: "Claude Sonnet 4.5",
-		description: "Best balance of speed and capability",
 	},
 	{
 		modelId: "anthropic/claude-haiku-4.5",

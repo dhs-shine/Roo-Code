@@ -134,11 +134,7 @@ describe("ModelService", () => {
 			const result = await service.fetchAvailableModels()
 
 			// Should include default model first with actual model name
-			expect(result[0]).toEqual({
-				modelId: "anthropic/claude-sonnet-4.5",
-				name: "Claude Sonnet 4.5",
-				description: "Best balance of speed and capability",
-			})
+			expect(result[0]).toEqual(DEFAULT_MODELS[0])
 
 			// Should include transformed models
 			expect(result.length).toBeGreaterThan(1)
