@@ -157,7 +157,7 @@ Tokens are valid for 90 days. The CLI will prompt you to re-authenticate when yo
 | `-y, --yes`                       | Non-interactive mode: auto-approve all actions                                          | `false`                       |
 | `-k, --api-key <key>`             | API key for the LLM provider                                                            | From env var                  |
 | `-p, --provider <provider>`       | API provider (anthropic, openai, openrouter, etc.)                                      | `openrouter`                  |
-| `-m, --model <model>`             | Model to use                                                                            | `anthropic/claude-sonnet-4.5` |
+| `-m, --model <model>`             | Model to use                                                                            | `anthropic/claude-opus-4.5`   |
 | `-M, --mode <mode>`               | Mode to start in (code, architect, ask, debug, etc.)                                    | `code`                        |
 | `-r, --reasoning-effort <effort>` | Reasoning effort level (unspecified, disabled, none, minimal, low, medium, high, xhigh) | `medium`                      |
 | `--ephemeral`                     | Run without persisting state (uses temporary storage)                                   | `false`                       |
@@ -189,7 +189,7 @@ roo acp [options]
 | --------------------------- | -------------------------------------------- | ----------------------------- |
 | `-e, --extension <path>`    | Path to the extension bundle directory       | Auto-detected                 |
 | `-p, --provider <provider>` | API provider (anthropic, openai, openrouter) | `openrouter`                  |
-| `-m, --model <model>`       | Model to use                                 | `anthropic/claude-sonnet-4.5` |
+| `-m, --model <model>`       | Model to use                                 | `anthropic/claude-opus-4.5`   |
 | `-M, --mode <mode>`         | Initial mode (code, architect, ask, debug)   | `code`                        |
 | `-k, --api-key <key>`       | API key for the LLM provider                 | From env var                  |
 

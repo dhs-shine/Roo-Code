@@ -14,7 +14,7 @@ import { DEFAULT_FLAGS } from "@/types/constants.js"
 import { AcpSession, type AcpSessionOptions } from "./session.js"
 import { acpLog } from "./logger.js"
 import { ModelService, createModelService } from "./model-service.js"
-import { type ExtendedNewSessionResponse, type AcpModelState, DEFAULT_MODELS } from "./types.js"
+import { type ExtendedNewSessionResponse, type AcpModelState } from "./types.js"
 import { envVarMap } from "@/lib/utils/provider.js"
 
 // =============================================================================
@@ -223,7 +223,7 @@ export class RooCodeAgent implements acp.Agent {
 	 * Get the current model state.
 	 */
 	private async getModelState(): Promise<AcpModelState> {
-		const currentModelId = this.options.model || DEFAULT_MODELS[0]!.modelId
+		const currentModelId = this.options.model || DEFAULT_FLAGS.model
 		return this.modelService.getModelState(currentModelId)
 	}
 

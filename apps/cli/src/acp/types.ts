@@ -56,14 +56,14 @@ export interface ExtendedNewSessionResponse extends acp.NewSessionResponse {
  */
 export const DEFAULT_MODELS: AcpModel[] = [
 	{
-		modelId: "anthropic/claude-sonnet-4.5",
-		name: "Claude Sonnet 4.5",
-		description: "Best balance of speed and capability",
-	},
-	{
 		modelId: "anthropic/claude-opus-4.5",
 		name: "Claude Opus 4.5",
 		description: "Most capable for complex work",
+	},
+	{
+		modelId: "anthropic/claude-sonnet-4.5",
+		name: "Claude Sonnet 4.5",
+		description: "Best balance of speed and capability",
 	},
 	{
 		modelId: "anthropic/claude-haiku-4.5",
