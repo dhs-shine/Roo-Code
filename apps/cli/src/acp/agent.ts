@@ -134,7 +134,11 @@ export class RooCodeAgent implements acp.Agent {
 	/**
 	 * Authenticate with Roo Code Cloud.
 	 */
-	async authenticate(_params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse | void> {
+	async authenticate(params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse | void> {
+		if (params.methodId !== "roo") {
+			throw acp.RequestError.invalidParams(undefined, `Invalid auth method: ${params.methodId}`)
+		}
+
 		const result = await login({ verbose: false })
 
 		if (!result.success) {

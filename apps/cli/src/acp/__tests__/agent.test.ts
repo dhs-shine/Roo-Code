@@ -72,11 +72,10 @@ describe("RooCodeAgent", () => {
 			})
 
 			expect(result.authMethods).toBeDefined()
-			expect(result.authMethods).toHaveLength(2)
+			expect(result.authMethods).toHaveLength(1)
 
 			const methods = result.authMethods!
-			expect(methods[0]!.id).toBe("roo-cloud")
-			expect(methods[1]!.id).toBe("api-key")
+			expect(methods[0]!.id).toBe("roo")
 		})
 
 		it("should store client capabilities", async () => {
@@ -98,15 +97,6 @@ describe("RooCodeAgent", () => {
 	})
 
 	describe("authenticate", () => {
-		it("should handle API key authentication", async () => {
-			// Agent has API key from options
-			const result = await agent.authenticate({
-				methodId: "api-key",
-			})
-
-			expect(result).toEqual({})
-		})
-
 		it("should throw for invalid auth method", async () => {
 			await expect(
 				agent.authenticate({
@@ -118,9 +108,6 @@ describe("RooCodeAgent", () => {
 
 	describe("newSession", () => {
 		it("should create a new session", async () => {
-			// First authenticate
-			await agent.authenticate({ methodId: "api-key" })
-
 			const result = await agent.newSession({
 				cwd: "/test/workspace",
 				mcpServers: [],
@@ -156,7 +143,6 @@ describe("RooCodeAgent", () => {
 	describe("prompt", () => {
 		it("should forward prompt to session", async () => {
 			// Setup
-			await agent.authenticate({ methodId: "api-key" })
 			const { sessionId } = await agent.newSession({
 				cwd: "/test/workspace",
 				mcpServers: [],
@@ -185,7 +171,6 @@ describe("RooCodeAgent", () => {
 	describe("cancel", () => {
 		it("should cancel session prompt", async () => {
 			// Setup
-			await agent.authenticate({ methodId: "api-key" })
 			const { sessionId } = await agent.newSession({
 				cwd: "/test/workspace",
 				mcpServers: [],
@@ -204,7 +189,6 @@ describe("RooCodeAgent", () => {
 	describe("setSessionMode", () => {
 		it("should set session mode", async () => {
 			// Setup
-			await agent.authenticate({ methodId: "api-key" })
 			const { sessionId } = await agent.newSession({
 				cwd: "/test/workspace",
 				mcpServers: [],
@@ -222,7 +206,6 @@ describe("RooCodeAgent", () => {
 
 		it("should throw for invalid mode", async () => {
 			// Setup
-			await agent.authenticate({ methodId: "api-key" })
 			const { sessionId } = await agent.newSession({
 				cwd: "/test/workspace",
 				mcpServers: [],
@@ -250,7 +233,6 @@ describe("RooCodeAgent", () => {
 	describe("dispose", () => {
 		it("should dispose all sessions", async () => {
 			// Setup
-			await agent.authenticate({ methodId: "api-key" })
 			await agent.newSession({ cwd: "/test/workspace1", mcpServers: [] })
 			await agent.newSession({ cwd: "/test/workspace2", mcpServers: [] })
 
