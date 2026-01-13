@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.40.0
+
+### Minor Changes
+
+- ![3.40.0 Release - Settings Search](/releases/3.40.0-release.png)
+
 ## [3.39.3] - 2026-01-10
 
 ![3.39.3 Release - Roo Code Router](/releases/3.39.3-release.png)
