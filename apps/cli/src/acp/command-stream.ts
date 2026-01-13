@@ -3,8 +3,6 @@
  *
  * Manages streaming of command execution output with code fence wrapping.
  * Handles both live command execution events and final command_output messages.
- *
- * Extracted from session.ts to separate the command output streaming concern.
  */
 
 import type { ClineMessage } from "@roo-code/types"
@@ -106,33 +104,36 @@ export class CommandStreamManager {
 		const output = message.text || ""
 		const isPartial = message.partial === true
 
-		// Skip partial updates - streaming is handled by handleExecutionOutput()
+		// Skip partial updates - streaming is handled by handleExecutionOutput().
 		if (isPartial) {
 			return
 		}
 
-		// Handle completion - update the tool call UI
+		// Handle completion - update the tool call UI.
 		const pendingCall = this.findMostRecentPendingCommand()
 
 		if (pendingCall) {
-			// Send closing code fence as agent_message_chunk if we had streaming output
+			// Send closing code fence as agent_message_chunk if we had streaming output.
 			const hadStreamingOutput = this.commandCodeFencesSent.has(pendingCall.toolCallId)
+
 			if (hadStreamingOutput) {
 				this.sendUpdate({
 					sessionUpdate: "agent_message_chunk",
 					content: { type: "text", text: "```\n" },
 				})
+
 				this.commandCodeFencesSent.delete(pendingCall.toolCallId)
 			}
 
-			// Command completed - send final tool_call_update with completed status
-			// Note: Zed doesn't display tool_call_update content, so we just mark it complete
+			// Command completed - send final tool_call_update with completed status.
+			// Note: Zed doesn't display tool_call_update content, so we just mark it complete.
 			this.sendUpdate({
 				sessionUpdate: "tool_call_update",
 				toolCallId: pendingCall.toolCallId,
 				status: "completed",
 				rawOutput: { output },
 			})
+
 			this.pendingCommandCalls.delete(pendingCall.toolCallId)
 		}
 	}
@@ -152,21 +153,24 @@ export class CommandStreamManager {
 	 * Uses executionId → toolCallId mapping for robust routing.
 	 */
 	handleExecutionOutput(executionId: string, output: string): void {
-		// Find or establish the toolCallId for this executionId
+		// Find or establish the toolCallId for this executionId.
 		let toolCallId = this.executionToToolCallId.get(executionId)
 
 		if (!toolCallId) {
-			// First output for this executionId - establish the mapping
+			// First output for this executionId - establish the mapping.
 			const pendingCall = this.findMostRecentPendingCommand()
+
 			if (!pendingCall) {
 				return
 			}
+
 			toolCallId = pendingCall.toolCallId
 			this.executionToToolCallId.set(executionId, toolCallId)
 		}
 
-		// Use executionId as the message key for delta tracking
+		// Use executionId as the message key for delta tracking.
 		const delta = this.deltaTracker.getDelta(executionId, output)
+
 		if (!delta) {
 			return
 		}
@@ -175,13 +179,14 @@ export class CommandStreamManager {
 		const isFirstChunk = !this.commandCodeFencesSent.has(toolCallId)
 		if (isFirstChunk) {
 			this.commandCodeFencesSent.add(toolCallId)
+
 			this.sendUpdate({
 				sessionUpdate: "agent_message_chunk",
 				content: { type: "text", text: "```\n" },
 			})
 		}
 
-		// Send the delta as agent_message_chunk for Zed visibility
+		// Send the delta as agent_message_chunk for Zed visibility.
 		this.sendUpdate({
 			sessionUpdate: "agent_message_chunk",
 			content: { type: "text", text: delta },
@@ -201,7 +206,7 @@ export class CommandStreamManager {
 	 */
 	reset(): void {
 		// Clear all pending commands - any from previous prompts are now stale
-		// and would cause duplicate completion messages if not cleaned up
+		// and would cause duplicate completion messages if not cleaned up.
 		this.pendingCommandCalls.clear()
 		this.commandCodeFencesSent.clear()
 		this.executionToToolCallId.clear()
@@ -220,10 +225,6 @@ export class CommandStreamManager {
 	hasOpenCodeFences(): boolean {
 		return this.commandCodeFencesSent.size > 0
 	}
-
-	// ===========================================================================
-	// Private Methods
-	// ===========================================================================
 
 	/**
 	 * Find the most recent pending command call.

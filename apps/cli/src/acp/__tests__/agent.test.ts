@@ -1,6 +1,7 @@
 import type * as acp from "@agentclientprotocol/sdk"
 
-import { RooCodeAgent, type RooCodeAgentOptions } from "../agent.js"
+import { RooCodeAgent } from "../agent.js"
+import type { AcpSessionOptions } from "../session.js"
 
 vi.mock("@/commands/auth/index.js", () => ({
 	login: vi.fn().mockResolvedValue({ success: true }),
@@ -24,7 +25,7 @@ describe("RooCodeAgent", () => {
 	let agent: RooCodeAgent
 	let mockConnection: acp.AgentSideConnection
 
-	const defaultOptions: RooCodeAgentOptions = {
+	const defaultOptions: AcpSessionOptions = {
 		extensionPath: "/test/extension",
 		provider: "openrouter",
 		apiKey: "test-key",

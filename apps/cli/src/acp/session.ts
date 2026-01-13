@@ -6,14 +6,15 @@
  */
 
 import {
-	type SessionNotification,
-	type ClientCapabilities,
+	type SessionUpdate,
 	type PromptRequest,
 	type PromptResponse,
 	type SessionModeState,
 	AgentSideConnection,
 } from "@agentclientprotocol/sdk"
 
+import type { SupportedProvider } from "@/types/types.js"
+import { getProviderSettings } from "@/lib/utils/provider.js"
 import { type ExtensionHostOptions, ExtensionHost } from "@/agent/extension-host.js"
 import { AgentLoopState } from "@/agent/agent-state.js"
 
@@ -35,20 +36,11 @@ import type {
 } from "./interfaces.js"
 import { type Result, ok, err } from "./utils/index.js"
 
-// =============================================================================
-// Types
-// =============================================================================
-
 export interface AcpSessionOptions {
-	/** Path to the extension bundle */
 	extensionPath: string
-	/** API provider */
-	provider: string
-	/** API key (optional, may come from environment) */
+	provider: SupportedProvider
 	apiKey?: string
-	/** Model to use */
 	model: string
-	/** Initial mode */
 	mode: string
 }
 
@@ -81,9 +73,6 @@ export class AcpSession implements IAcpSession {
 	/** Session event handler for managing extension events */
 	private readonly eventHandler: SessionEventHandler
 
-	/** Workspace path for resolving relative file paths */
-	private readonly workspacePath: string
-
 	/** Current model ID */
 	private currentModelId: string = DEFAULT_MODELS[0]!.modelId
 
@@ -94,27 +83,18 @@ export class AcpSession implements IAcpSession {
 		private readonly sessionId: string,
 		private readonly extensionHost: ExtensionHost,
 		private readonly connection: AgentSideConnection,
-		workspacePath: string,
-		initialMode: string,
+		private readonly workspacePath: string,
+		private readonly options: AcpSessionOptions,
 		deps: AcpSessionDependencies = {},
 	) {
-		this.workspacePath = workspacePath
-
-		// Initialize dependencies with defaults or injected instances.
 		this.logger = deps.logger ?? acpLog
 		this.promptState = deps.createPromptStateMachine?.() ?? new PromptStateMachine({ logger: this.logger })
 		this.deltaTracker = deps.createDeltaTracker?.() ?? new DeltaTracker()
 
-		// Initialize tool handler registry.
+		const sendUpdate = (update: SessionUpdate) => connection.sessionUpdate({ sessionId: this.sessionId, update })
+
 		this.toolHandlerRegistry = new ToolHandlerRegistry()
 
-		// Create send update callback for stream managers.
-		// Updates are sent directly to preserve chunk ordering.
-		const sendUpdate = (update: SessionNotification["update"]) => {
-			void this.sendUpdateDirect(update)
-		}
-
-		// Initialize stream managers with injected logger.
 		this.commandStreamManager = new CommandStreamManager({
 			deltaTracker: this.deltaTracker,
 			sendUpdate,
@@ -127,7 +107,7 @@ export class AcpSession implements IAcpSession {
 			logger: this.logger,
 		})
 
-		// Create event handler with extension host for mode tracking
+		// Create event handler with extension host for mode tracking.
 		this.eventHandler = createSessionEventHandler({
 			logger: this.logger,
 			client: extensionHost.client,
@@ -139,22 +119,21 @@ export class AcpSession implements IAcpSession {
 			toolHandlerRegistry: this.toolHandlerRegistry,
 			sendUpdate,
 			approveAction: () => this.extensionHost.client.approve(),
-			respondWithText: (text: string) => this.extensionHost.client.respond(text),
-			sendToExtension: (message) =>
-				this.extensionHost.sendToExtension(message as Parameters<typeof this.extensionHost.sendToExtension>[0]),
+			respondWithText: (text: string, images?: string[]) => this.extensionHost.client.respond(text, images),
+			sendToExtension: (message) => this.extensionHost.sendToExtension(message),
 			workspacePath,
-			initialModeId: initialMode,
+			initialModeId: this.options.mode,
 			isCancelling: () => this.isCancelling,
 		})
 
 		this.eventHandler.onTaskCompleted((success) => this.handleTaskCompleted(success))
 
-		// Listen for state changes to log and detect cancellation completion
+		// Listen for state changes to log and detect cancellation completion.
 		this.extensionHost.client.on("stateChange", (event) => {
 			const prev = event.previousState
 			const curr = event.currentState
 
-			// Only log if something actually changed
+			// Only log if something actually changed.
 			const stateChanged =
 				prev.state !== curr.state ||
 				prev.isRunning !== curr.isRunning ||
@@ -188,32 +167,25 @@ export class AcpSession implements IAcpSession {
 		})
 	}
 
-	// ===========================================================================
-	// Factory Method
-	// ===========================================================================
-
 	/**
 	 * Create a new AcpSession.
 	 *
 	 * This initializes an ExtensionHost for the given working directory
 	 * and sets up event handlers to stream updates to the ACP client.
-	 *
-	 * @param sessionId - Unique session identifier
-	 * @param cwd - Working directory for the session
-	 * @param connection - ACP connection for sending updates
-	 * @param _clientCapabilities - Client capabilities (currently unused)
-	 * @param options - Session configuration options
-	 * @param deps - Optional dependencies for testing
 	 */
-	static async create(
-		sessionId: string,
-		cwd: string,
-		connection: AgentSideConnection,
-		_clientCapabilities: ClientCapabilities | undefined,
-		options: AcpSessionOptions,
-		deps: AcpSessionDependencies = {},
-	): Promise<AcpSession> {
-		// Create ExtensionHost with ACP-specific configuration.
+	static async create({
+		sessionId,
+		cwd,
+		connection,
+		options,
+		deps,
+	}: {
+		sessionId: string
+		cwd: string
+		connection: AgentSideConnection
+		options: AcpSessionOptions
+		deps: AcpSessionDependencies
+	}): Promise<AcpSession> {
 		const hostOptions: ExtensionHostOptions = {
 			mode: options.mode,
 			user: null,
@@ -222,16 +194,14 @@ export class AcpSession implements IAcpSession {
 			model: options.model,
 			workspacePath: cwd,
 			extensionPath: options.extensionPath,
-			// ACP mode: disable direct output, we stream through ACP.
-			disableOutput: true,
-			// Don't persist state - ACP clients manage their own sessions.
-			ephemeral: true,
+			disableOutput: true, // ACP mode: disable direct output, we stream through ACP.
+			ephemeral: true, // Don't persist state - ACP clients manage their own sessions.
 		}
 
 		const extensionHost = new ExtensionHost(hostOptions)
 		await extensionHost.activate()
 
-		const session = new AcpSession(sessionId, extensionHost, connection, cwd, options.mode, deps)
+		const session = new AcpSession(sessionId, extensionHost, connection, cwd, options, deps)
 		session.setupEventHandlers()
 
 		return session
@@ -365,13 +335,8 @@ export class AcpSession implements IAcpSession {
 	 */
 	setModel(modelId: string): void {
 		this.currentModelId = modelId
-
-		// Map model ID to extension settings
-		// The property is apiModelId for most providers
-		this.extensionHost.sendToExtension({
-			type: "updateSettings",
-			updatedSettings: { apiModelId: modelId },
-		})
+		const updatedSettings = getProviderSettings(this.options.provider, this.options.apiKey, modelId)
+		this.extensionHost.sendToExtension({ type: "updateSettings", updatedSettings })
 	}
 
 	/**
@@ -403,10 +368,7 @@ export class AcpSession implements IAcpSession {
 	 */
 	async dispose(): Promise<void> {
 		this.cancel()
-
-		// Clean up event handler listeners
 		this.eventHandler.cleanup()
-
 		await this.extensionHost.dispose()
 	}
 
@@ -419,10 +381,10 @@ export class AcpSession implements IAcpSession {
 	 *
 	 * @returns Result indicating success or failure with error details.
 	 */
-	private async sendUpdateDirect(update: SessionNotification["update"]): Promise<Result<void>> {
+	private async sendUpdate(update: SessionUpdate): Promise<Result<void>> {
 		try {
 			// Log the update being sent to ACP connection (commented out - too noisy)
-			// this.logger.info("Session", `OUT: ${JSON.stringify(update)}`)
+			this.logger.info("Session", `OUT: ${JSON.stringify(update)}`)
 			await this.connection.sessionUpdate({ sessionId: this.sessionId, update })
 			return ok(undefined)
 		} catch (error) {

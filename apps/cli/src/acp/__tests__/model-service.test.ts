@@ -118,26 +118,65 @@ describe("ModelService", () => {
 			expect(result).toEqual(DEFAULT_MODELS)
 		})
 
-		it("should transform API response to AcpModel format", async () => {
+		it("should transform API response to AcpModel format using name and description fields", async () => {
 			const service = new ModelService()
 
 			mockFetch.mockResolvedValueOnce({
 				ok: true,
 				json: async () => ({
 					data: [
-						{ id: "anthropic/claude-3-sonnet", owned_by: "anthropic" },
-						{ id: "openai/gpt-4", owned_by: "openai" },
+						{
+							id: "anthropic/claude-3-sonnet",
+							name: "Claude 3 Sonnet",
+							description: "A balanced model for most tasks",
+							owned_by: "anthropic",
+						},
+						{
+							id: "openai/gpt-4",
+							name: "GPT-4",
+							description: "OpenAI's flagship model",
+							owned_by: "openai",
+						},
 					],
 				}),
 			})
 
 			const result = await service.fetchAvailableModels()
 
-			// Should include default model first with actual model name
-			expect(result[0]).toEqual(DEFAULT_MODELS[0])
+			// Should include transformed models with name and description from API
+			expect(result).toHaveLength(2)
+			expect(result).toContainEqual({
+				modelId: "anthropic/claude-3-sonnet",
+				name: "Claude 3 Sonnet",
+				description: "A balanced model for most tasks",
+			})
+			expect(result).toContainEqual({
+				modelId: "openai/gpt-4",
+				name: "GPT-4",
+				description: "OpenAI's flagship model",
+			})
+		})
 
-			// Should include transformed models
-			expect(result.length).toBeGreaterThan(1)
+		it("should sort models by model ID", async () => {
+			const service = new ModelService()
+
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({
+					data: [
+						{ id: "openai/gpt-4", name: "GPT-4" },
+						{ id: "anthropic/claude-3-sonnet", name: "Claude 3 Sonnet" },
+						{ id: "google/gemini-pro", name: "Gemini Pro" },
+					],
+				}),
+			})
+
+			const result = await service.fetchAvailableModels()
+
+			// Should be sorted by model ID
+			expect(result[0]!.modelId).toBe("anthropic/claude-3-sonnet")
+			expect(result[1]!.modelId).toBe("google/gemini-pro")
+			expect(result[2]!.modelId).toBe("openai/gpt-4")
 		})
 
 		it("should include Authorization header when apiKey is provided", async () => {
@@ -158,41 +197,6 @@ describe("ModelService", () => {
 					}),
 				}),
 			)
-		})
-	})
-
-	describe("getModelState", () => {
-		it("should return model state with current model ID", async () => {
-			const service = new ModelService()
-
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: async () => ({
-					data: [{ id: "anthropic/claude-sonnet-4.5" }],
-				}),
-			})
-
-			const state = await service.getModelState("anthropic/claude-sonnet-4.5")
-
-			expect(state).toEqual({
-				availableModels: expect.any(Array),
-				currentModelId: "anthropic/claude-sonnet-4.5",
-			})
-		})
-
-		it("should fall back to 'default' if current model ID is not in available models", async () => {
-			const service = new ModelService()
-
-			mockFetch.mockResolvedValueOnce({
-				ok: true,
-				json: async () => ({
-					data: [{ id: "model-1" }],
-				}),
-			})
-
-			const state = await service.getModelState("non-existent-model")
-
-			expect(state.currentModelId).toBe(DEFAULT_MODELS[0]!.modelId)
 		})
 	})
 

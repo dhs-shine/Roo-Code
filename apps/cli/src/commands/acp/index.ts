@@ -6,7 +6,7 @@ import * as acpSdk from "@agentclientprotocol/sdk"
 
 import { type SupportedProvider, DEFAULT_FLAGS } from "@/types/index.js"
 import { getDefaultExtensionPath } from "@/lib/utils/extension.js"
-import { type RooCodeAgentOptions, RooCodeAgent, acpLog } from "@/acp/index.js"
+import { RooCodeAgent, acpLog } from "@/acp/index.js"
 
 export interface AcpCommandOptions {
 	extension?: string
@@ -25,14 +25,6 @@ export async function runAcpServer(options: AcpCommandOptions): Promise<void> {
 		process.exit(1)
 	}
 
-	const agentOptions: RooCodeAgentOptions = {
-		extensionPath,
-		provider: options.provider || DEFAULT_FLAGS.provider,
-		model: options.model || DEFAULT_FLAGS.model,
-		mode: options.mode || DEFAULT_FLAGS.mode,
-		apiKey: options.apiKey || process.env.OPENROUTER_API_KEY,
-	}
-
 	// Set up stdio streams for ACP communication.
 	// Note: We write to stdout (agent -> client) and read from stdin (client -> agent).
 	const stdout = Writable.toWeb(process.stdout) as WritableStream<Uint8Array>
@@ -45,7 +37,17 @@ export async function runAcpServer(options: AcpCommandOptions): Promise<void> {
 
 	const connection = new acpSdk.AgentSideConnection((conn: acpSdk.AgentSideConnection) => {
 		acpLog.info("Command", "Agent connection established")
-		agent = new RooCodeAgent(agentOptions, conn)
+		agent = new RooCodeAgent(
+			{
+				extensionPath,
+				provider: options.provider ?? DEFAULT_FLAGS.provider,
+				model: options.model || DEFAULT_FLAGS.model,
+				mode: options.mode || DEFAULT_FLAGS.mode,
+				apiKey: options.apiKey || process.env.OPENROUTER_API_KEY,
+			},
+			conn,
+		)
+
 		return agent
 	}, stream)
 

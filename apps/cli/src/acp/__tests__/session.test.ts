@@ -93,20 +93,26 @@ describe("AcpSession", () => {
 
 	describe("create", () => {
 		it("should create a session with a unique ID", async () => {
-			const session = await AcpSession.create(
-				"test-session-1",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session-1",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			expect(session).toBeDefined()
 			expect(session.getSessionId()).toBe("test-session-1")
 		})
 
 		it("should create ExtensionHost with correct config", async () => {
-			await AcpSession.create("test-session-2", "/test/workspace", mockConnection, undefined, defaultOptions)
+			await AcpSession.create({
+				sessionId: "test-session-2",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			expect(ExtensionHost).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -121,26 +127,25 @@ describe("AcpSession", () => {
 		})
 
 		it("should accept client capabilities", async () => {
-			const clientCapabilities: acp.ClientCapabilities = {
-				fs: {
-					readTextFile: true,
-					writeTextFile: true,
-				},
-			}
-
-			const session = await AcpSession.create(
-				"test-session-3",
-				"/test/workspace",
-				mockConnection,
-				clientCapabilities,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session-3",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			expect(session).toBeDefined()
 		})
 
 		it("should activate the extension host", async () => {
-			await AcpSession.create("test-session-4", "/test/workspace", mockConnection, undefined, defaultOptions)
+			await AcpSession.create({
+				sessionId: "test-session-4",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 			expect(mockHostInstance.activate).toHaveBeenCalled()
@@ -149,13 +154,13 @@ describe("AcpSession", () => {
 
 	describe("prompt", () => {
 		it("should send a task to the extension host", async () => {
-			const session = await AcpSession.create(
-				"test-session",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 
@@ -181,13 +186,13 @@ describe("AcpSession", () => {
 		})
 
 		it("should handle image prompts", async () => {
-			const session = await AcpSession.create(
-				"test-session",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 
@@ -215,13 +220,13 @@ describe("AcpSession", () => {
 
 	describe("cancel", () => {
 		it("should send cancel message to extension host", async () => {
-			const session = await AcpSession.create(
-				"test-session",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 
@@ -243,13 +248,13 @@ describe("AcpSession", () => {
 
 	describe("setMode", () => {
 		it("should update the session mode", async () => {
-			const session = await AcpSession.create(
-				"test-session",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 
@@ -264,13 +269,13 @@ describe("AcpSession", () => {
 
 	describe("dispose", () => {
 		it("should dispose the extension host", async () => {
-			const session = await AcpSession.create(
-				"test-session",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "test-session",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			const mockHostInstance = vi.mocked(ExtensionHost).mock.results[0]!.value
 
@@ -282,13 +287,13 @@ describe("AcpSession", () => {
 
 	describe("getSessionId", () => {
 		it("should return the session ID", async () => {
-			const session = await AcpSession.create(
-				"my-unique-session-id",
-				"/test/workspace",
-				mockConnection,
-				undefined,
-				defaultOptions,
-			)
+			const session = await AcpSession.create({
+				sessionId: "my-unique-session-id",
+				cwd: "/test/workspace",
+				connection: mockConnection,
+				options: defaultOptions,
+				deps: {},
+			})
 
 			expect(session.getSessionId()).toBe("my-unique-session-id")
 		})

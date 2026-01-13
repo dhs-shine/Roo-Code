@@ -4,7 +4,7 @@ export const DEFAULT_FLAGS = {
 	mode: "code",
 	reasoningEffort: "medium" as const,
 	model: "anthropic/claude-opus-4.5",
-	provider: "openrouter",
+	provider: "openrouter" as const,
 }
 
 export const REASONING_EFFORTS = [...reasoningEffortsExtended, "unspecified", "disabled"]

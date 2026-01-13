@@ -2,11 +2,18 @@
  * Session Event Handler
  *
  * Handles events from the ExtensionClient and ExtensionHost, translating them to ACP updates.
- * Extracted from session.ts for better separation of concerns.
  */
 
 import type { SessionMode } from "@agentclientprotocol/sdk"
-import type { ClineMessage, ClineAsk, ClineSay, ExtensionMessage, ExtensionState, ModeConfig } from "@roo-code/types"
+import type {
+	ClineMessage,
+	ClineAsk,
+	ClineSay,
+	ExtensionMessage,
+	ExtensionState,
+	WebviewMessage,
+	ModeConfig,
+} from "@roo-code/types"
 
 import type { WaitingForInputEvent, TaskCompletedEvent, CommandExecutionOutputEvent } from "@/agent/events.js"
 
@@ -123,7 +130,7 @@ export interface SessionEventHandlerDeps {
 	/** Callback to respond with text */
 	respondWithText: (text: string) => void
 	/** Callback to send message to extension */
-	sendToExtension: (message: unknown) => void
+	sendToExtension: (message: WebviewMessage) => void
 	/** Workspace path */
 	workspacePath: string
 	/** Initial mode ID */
@@ -169,7 +176,7 @@ export class SessionEventHandler {
 	private readonly sendUpdate: SendUpdateFn
 	private readonly approveAction: () => void
 	private readonly respondWithText: (text: string) => void
-	private readonly sendToExtension: (message: unknown) => void
+	private readonly sendToExtension: (message: WebviewMessage) => void
 	private readonly workspacePath: string
 	private readonly isCancelling: () => boolean
 
