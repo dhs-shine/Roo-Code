@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.40.1
+
+### Patch Changes
+
+-   - Fix: Add allowedFunctionNames support for Gemini to prevent mode switch errors (#10711 by @hannesrudolph, PR #10708 by @hannesrudolph)
+
 ## [3.40.0] - 2026-01-13
 
 ![3.40.0 Release - Settings Search](/releases/3.40.0-release.png)
