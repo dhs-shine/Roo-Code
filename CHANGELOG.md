@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.41.1
+
+### Patch Changes
+
+- ![3.41.1 Release - Aggregated Subtask Costs](/releases/3.41.1-release.png)
+
 ## [3.41.0] - 2026-01-15
 
 ![3.41.0 Release - OpenAI - ChatGPT Plus/Pro Provider](/releases/3.41.0-release.png)
