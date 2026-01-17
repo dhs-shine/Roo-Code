@@ -41,6 +41,7 @@ export async function run(prompt: string | undefined, flagOptions: FlagOptions) 
 	const isTuiSupported = process.stdin.isTTY && process.stdout.isTTY
 	const isTuiEnabled = !flagOptions.print && isTuiSupported
 	let rooToken = await loadToken()
+	const isOnboardingEnabled = isTuiEnabled && !rooToken && !flagOptions.provider
 
 	const extensionHostOptions: ExtensionHostOptions = {
 		mode: flagOptions.mode || DEFAULT_FLAGS.mode,
@@ -58,7 +59,7 @@ export async function run(prompt: string | undefined, flagOptions: FlagOptions) 
 
 	// Roo Code Cloud Authentication
 
-	if (isTuiEnabled) {
+	if (isOnboardingEnabled) {
 		let { onboardingProviderChoice } = await loadSettings()
 
 		if (!onboardingProviderChoice) {
