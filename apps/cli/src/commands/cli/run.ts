@@ -28,7 +28,7 @@ import { ExtensionHost, ExtensionHostOptions } from "@/agent/index.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-export async function run(prompt: string | undefined, flagOptions: FlagOptions) {
+export async function run(promptArg: string | undefined, flagOptions: FlagOptions) {
 	setLogger({
 		info: () => {},
 		warn: () => {},
@@ -36,22 +36,45 @@ export async function run(prompt: string | undefined, flagOptions: FlagOptions) 
 		debug: () => {},
 	})
 
+	let prompt = promptArg
+
+	if (flagOptions.promptFile) {
+		if (!fs.existsSync(flagOptions.promptFile)) {
+			console.error(`[CLI] Error: Prompt file does not exist: ${flagOptions.promptFile}`)
+			process.exit(1)
+		}
+
+		prompt = fs.readFileSync(flagOptions.promptFile, "utf-8")
+	}
+
 	// Options
+
+	let rooToken = await loadToken()
+	const settings = await loadSettings()
 
 	const isTuiSupported = process.stdin.isTTY && process.stdout.isTTY
 	const isTuiEnabled = !flagOptions.print && isTuiSupported
-	let rooToken = await loadToken()
-	const isOnboardingEnabled = isTuiEnabled && !rooToken && !flagOptions.provider
+	const isOnboardingEnabled = isTuiEnabled && !rooToken && !flagOptions.provider && !settings.provider
+
+	// Determine effective values: CLI flags > settings file > DEFAULT_FLAGS.
+	const effectiveMode = flagOptions.mode || settings.mode || DEFAULT_FLAGS.mode
+	const effectiveModel = flagOptions.model || settings.model || DEFAULT_FLAGS.model
+	const effectiveReasoningEffort =
+		flagOptions.reasoningEffort || settings.reasoningEffort || DEFAULT_FLAGS.reasoningEffort
+	const effectiveProvider = flagOptions.provider ?? settings.provider ?? (rooToken ? "roo" : "openrouter")
+	const effectiveWorkspacePath = flagOptions.workspace ? path.resolve(flagOptions.workspace) : process.cwd()
+	const effectiveDangerouslySkipPermissions =
+		flagOptions.yes || flagOptions.dangerouslySkipPermissions || settings.dangerouslySkipPermissions || false
 
 	const extensionHostOptions: ExtensionHostOptions = {
-		mode: flagOptions.mode || DEFAULT_FLAGS.mode,
-		reasoningEffort: flagOptions.reasoningEffort === "unspecified" ? undefined : flagOptions.reasoningEffort,
+		mode: effectiveMode,
+		reasoningEffort: effectiveReasoningEffort === "unspecified" ? undefined : effectiveReasoningEffort,
 		user: null,
-		provider: flagOptions.provider ?? (rooToken ? "roo" : "openrouter"),
-		model: flagOptions.model || DEFAULT_FLAGS.model,
-		workspacePath: process.cwd(),
+		provider: effectiveProvider,
+		model: effectiveModel,
+		workspacePath: effectiveWorkspacePath,
 		extensionPath: path.resolve(flagOptions.extension || getDefaultExtensionPath(__dirname)),
-		nonInteractive: flagOptions.yes,
+		nonInteractive: effectiveDangerouslySkipPermissions,
 		ephemeral: flagOptions.ephemeral,
 		debug: flagOptions.debug,
 		exitOnComplete: flagOptions.print,
@@ -60,7 +83,7 @@ export async function run(prompt: string | undefined, flagOptions: FlagOptions) 
 	// Roo Code Cloud Authentication
 
 	if (isOnboardingEnabled) {
-		let { onboardingProviderChoice } = await loadSettings()
+		let { onboardingProviderChoice } = settings
 
 		if (!onboardingProviderChoice) {
 			const { choice, token } = await runOnboarding()

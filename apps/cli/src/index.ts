@@ -13,10 +13,12 @@ program
 
 program
 	.argument("[prompt]", "Your prompt")
+	.option("--prompt-file <path>", "Read prompt from a file instead of command line argument")
+	.option("-w, --workspace <path>", "Workspace directory path (defaults to current working directory)")
 	.option("-p, --print", "Print response and exit (non-interactive mode)", false)
 	.option("-e, --extension <path>", "Path to the extension bundle directory")
 	.option("-d, --debug", "Enable debug output (includes detailed debug information)", false)
-	.option("-y, --yes", "Auto-approve all prompts", false)
+	.option("-y, --yes, --dangerously-skip-permissions", "Auto-approve all prompts (use with caution)", false)
 	.option("-k, --api-key <key>", "API key for the LLM provider")
 	.option("--provider <provider>", "API provider (roo, anthropic, openai, openrouter, etc.)")
 	.option("-m, --model <model>", "Model to use", DEFAULT_FLAGS.model)

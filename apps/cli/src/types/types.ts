@@ -18,10 +18,13 @@ export function isSupportedProvider(provider: string): provider is SupportedProv
 export type ReasoningEffortFlagOptions = ReasoningEffortExtended | "unspecified" | "disabled"
 
 export type FlagOptions = {
+	promptFile?: string
+	workspace?: string
 	print: boolean
 	extension?: string
 	debug: boolean
 	yes: boolean
+	dangerouslySkipPermissions: boolean
 	apiKey?: string
 	provider?: SupportedProvider
 	model?: string
@@ -43,4 +46,14 @@ export interface OnboardingResult {
 
 export interface CliSettings {
 	onboardingProviderChoice?: OnboardingProviderChoice
+	/** Default mode to use (e.g., "code", "architect", "ask", "debug") */
+	mode?: string
+	/** Default provider to use */
+	provider?: SupportedProvider
+	/** Default model to use */
+	model?: string
+	/** Default reasoning effort level */
+	reasoningEffort?: ReasoningEffortFlagOptions
+	/** Auto-approve all prompts (use with caution) */
+	dangerouslySkipPermissions?: boolean
 }
