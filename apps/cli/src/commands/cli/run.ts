@@ -142,7 +142,7 @@ export async function run(prompt: string | undefined, flagOptions: FlagOptions) 
 	if (!isTuiEnabled) {
 		if (!prompt) {
 			console.error("[CLI] Error: prompt is required in print mode")
-			console.error("[CLI] Usage: roo -p <prompt> [options]")
+			console.error("[CLI] Usage: roo <prompt> --print [options]")
 			console.error("[CLI] Run without -p for interactive mode")
 			process.exit(1)
 		}
