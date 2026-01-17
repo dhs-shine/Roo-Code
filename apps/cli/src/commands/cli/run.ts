@@ -65,6 +65,7 @@ export async function run(promptArg: string | undefined, flagOptions: FlagOption
 	const effectiveWorkspacePath = flagOptions.workspace ? path.resolve(flagOptions.workspace) : process.cwd()
 	const effectiveDangerouslySkipPermissions =
 		flagOptions.yes || flagOptions.dangerouslySkipPermissions || settings.dangerouslySkipPermissions || false
+	const effectiveExitOnComplete = flagOptions.print || flagOptions.oneshot || settings.oneshot || false
 
 	const extensionHostOptions: ExtensionHostOptions = {
 		mode: effectiveMode,
@@ -77,7 +78,7 @@ export async function run(promptArg: string | undefined, flagOptions: FlagOption
 		nonInteractive: effectiveDangerouslySkipPermissions,
 		ephemeral: flagOptions.ephemeral,
 		debug: flagOptions.debug,
-		exitOnComplete: flagOptions.print,
+		exitOnComplete: effectiveExitOnComplete,
 	}
 
 	// Roo Code Cloud Authentication

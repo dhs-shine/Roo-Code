@@ -68,23 +68,24 @@ export interface TUIAppProps extends ExtensionHostOptions {
 /**
  * Inner App component that uses the terminal size context
  */
-function AppInner({
-	initialPrompt,
-	workspacePath,
-	extensionPath,
-	user,
-	provider,
-	apiKey,
-	model,
-	mode,
-	nonInteractive = false,
-	debug,
-	exitOnComplete,
-	reasoningEffort,
-	ephemeral,
-	version,
-	createExtensionHost,
-}: TUIAppProps) {
+function AppInner({ createExtensionHost, ...extensionHostOptions }: TUIAppProps) {
+	const {
+		initialPrompt,
+		workspacePath,
+		extensionPath,
+		user,
+		provider,
+		apiKey,
+		model,
+		mode,
+		nonInteractive = false,
+		debug,
+		exitOnComplete,
+		reasoningEffort,
+		ephemeral,
+		version,
+	} = extensionHostOptions
+
 	const { exit } = useApp()
 
 	const {
@@ -454,12 +455,7 @@ function AppInner({
 			{/* Header - fixed size */}
 			<Box flexShrink={0}>
 				<Header
-					cwd={workspacePath}
-					user={user}
-					provider={provider}
-					model={model}
-					mode={currentMode || mode}
-					reasoningEffort={reasoningEffort}
+					{...extensionHostOptions}
 					version={version}
 					tokenUsage={tokenUsage}
 					contextWindow={contextWindow}

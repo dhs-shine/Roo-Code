@@ -31,6 +31,7 @@ export type FlagOptions = {
 	mode?: string
 	reasoningEffort?: ReasoningEffortFlagOptions
 	ephemeral: boolean
+	oneshot: boolean
 }
 
 export enum OnboardingProviderChoice {
@@ -56,4 +57,6 @@ export interface CliSettings {
 	reasoningEffort?: ReasoningEffortFlagOptions
 	/** Auto-approve all prompts (use with caution) */
 	dangerouslySkipPermissions?: boolean
+	/** Exit upon task completion */
+	oneshot?: boolean
 }

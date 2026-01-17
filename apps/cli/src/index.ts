@@ -29,6 +29,7 @@ program
 		DEFAULT_FLAGS.reasoningEffort,
 	)
 	.option("--ephemeral", "Run without persisting state (uses temporary storage)", false)
+	.option("--oneshot", "Exit upon task completion", false)
 	.action(run)
 
 const authCommand = program.command("auth").description("Manage authentication for Roo Code Cloud")

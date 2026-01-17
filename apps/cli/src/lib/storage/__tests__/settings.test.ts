@@ -204,5 +204,33 @@ describe("Settings Storage", () => {
 			expect(loaded.reasoningEffort).toBe("high")
 			expect(loaded.dangerouslySkipPermissions).toBe(true)
 		})
+
+		it("should support oneshot setting", async () => {
+			await saveSettings({ oneshot: true })
+			const loaded = await loadSettings()
+
+			expect(loaded.oneshot).toBe(true)
+		})
+
+		it("should support all settings together including oneshot", async () => {
+			const allSettings = {
+				mode: "architect",
+				provider: "anthropic" as const,
+				model: "claude-sonnet-4-20250514",
+				reasoningEffort: "high" as const,
+				dangerouslySkipPermissions: true,
+				oneshot: true,
+			}
+
+			await saveSettings(allSettings)
+			const loaded = await loadSettings()
+
+			expect(loaded.mode).toBe("architect")
+			expect(loaded.provider).toBe("anthropic")
+			expect(loaded.model).toBe("claude-sonnet-4-20250514")
+			expect(loaded.reasoningEffort).toBe("high")
+			expect(loaded.dangerouslySkipPermissions).toBe(true)
+			expect(loaded.oneshot).toBe(true)
+		})
 	})
 })
