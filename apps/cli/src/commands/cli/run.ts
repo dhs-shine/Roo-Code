@@ -28,7 +28,7 @@ import { ExtensionHost, ExtensionHostOptions } from "@/agent/index.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-export async function run(workspaceArg: string, flagOptions: FlagOptions) {
+export async function run(prompt: string | undefined, flagOptions: FlagOptions) {
 	setLogger({
 		info: () => {},
 		warn: () => {},
@@ -39,8 +39,8 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 	// Options
 
 	const isTuiSupported = process.stdin.isTTY && process.stdout.isTTY
-	const isTuiEnabled = flagOptions.tui && isTuiSupported
-	const rooToken = await loadToken()
+	const isTuiEnabled = !flagOptions.print && isTuiSupported
+	let rooToken = await loadToken()
 
 	const extensionHostOptions: ExtensionHostOptions = {
 		mode: flagOptions.mode || DEFAULT_FLAGS.mode,
@@ -48,12 +48,12 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 		user: null,
 		provider: flagOptions.provider ?? (rooToken ? "roo" : "openrouter"),
 		model: flagOptions.model || DEFAULT_FLAGS.model,
-		workspacePath: path.resolve(workspaceArg),
+		workspacePath: process.cwd(),
 		extensionPath: path.resolve(flagOptions.extension || getDefaultExtensionPath(__dirname)),
 		nonInteractive: flagOptions.yes,
 		ephemeral: flagOptions.ephemeral,
 		debug: flagOptions.debug,
-		exitOnComplete: flagOptions.exitOnComplete,
+		exitOnComplete: flagOptions.print,
 	}
 
 	// Roo Code Cloud Authentication
@@ -62,8 +62,9 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 		let { onboardingProviderChoice } = await loadSettings()
 
 		if (!onboardingProviderChoice) {
-			const result = await runOnboarding()
-			onboardingProviderChoice = result.choice
+			const { choice, token } = await runOnboarding()
+			onboardingProviderChoice = choice
+			rooToken = token ?? null
 		}
 
 		if (onboardingProviderChoice === OnboardingProviderChoice.Roo) {
@@ -139,15 +140,15 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 	}
 
 	if (!isTuiEnabled) {
-		if (!flagOptions.prompt) {
-			console.error("[CLI] Error: prompt is required in plain text mode")
-			console.error("[CLI] Usage: roo [workspace] -P <prompt> [options]")
-			console.error("[CLI] Use TUI mode (without --no-tui) for interactive input")
+		if (!prompt) {
+			console.error("[CLI] Error: prompt is required in print mode")
+			console.error("[CLI] Usage: roo -p <prompt> [options]")
+			console.error("[CLI] Run without -p for interactive mode")
 			process.exit(1)
 		}
 
-		if (flagOptions.tui) {
-			console.warn("[CLI] TUI disabled (no TTY support), falling back to plain text mode")
+		if (!flagOptions.print) {
+			console.warn("[CLI] TUI disabled (no TTY support), falling back to print mode")
 		}
 	}
 
@@ -161,7 +162,7 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 			render(
 				createElement(App, {
 					...extensionHostOptions,
-					initialPrompt: flagOptions.prompt,
+					initialPrompt: prompt,
 					version: VERSION,
 					createExtensionHost: (opts: ExtensionHostOptions) => new ExtensionHost(opts),
 				}),
@@ -200,12 +201,9 @@ export async function run(workspaceArg: string, flagOptions: FlagOptions) {
 
 		try {
 			await host.activate()
-			await host.runTask(flagOptions.prompt!)
+			await host.runTask(prompt!)
 			await host.dispose()
-
-			if (!flagOptions.waitOnComplete) {
-				process.exit(0)
-			}
+			process.exit(0)
 		} catch (error) {
 			console.error("[CLI] Error:", error instanceof Error ? error.message : String(error))
 

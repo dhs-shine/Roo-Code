@@ -36,37 +36,27 @@ export const runTaskWithCli = async ({ run, task, publish, logger, jobToken }: R
 	const controller = new AbortController()
 	const cancelSignal = controller.signal
 
-	const cliArgs = [
-		"--filter",
-		"@roo-code/cli",
-		"start",
-		"--yes",
-		"--exit-on-complete",
-		"--reasoning-effort",
-		"disabled",
-		"--workspace",
-		workspacePath,
-	]
+	const cliArgs = ["--filter", "@roo-code/cli", "start", "--yes", "--print", "--reasoning-effort", "disabled"]
 
 	if (run.settings?.mode) {
-		cliArgs.push("-M", run.settings.mode)
+		cliArgs.push("--mode", run.settings.mode)
 	}
 
 	if (run.settings?.apiProvider) {
-		cliArgs.push("-p", run.settings.apiProvider)
+		cliArgs.push("--provider", run.settings.apiProvider)
 	}
 
 	const modelId = run.settings?.apiModelId || run.settings?.openRouterModelId
 
 	if (modelId) {
-		cliArgs.push("-m", modelId)
+		cliArgs.push("--model", modelId)
 	}
 
 	cliArgs.push(prompt)
 
 	logger.info(`CLI command: pnpm ${cliArgs.join(" ")}`)
 
-	const subprocess = execa("pnpm", cliArgs, { env, cancelSignal, cwd: process.cwd() })
+	const subprocess = execa("pnpm", cliArgs, { env, cancelSignal, cwd: workspacePath })
 
 	// Buffer for accumulating streaming output until we have complete lines.
 	let stdoutBuffer = ""

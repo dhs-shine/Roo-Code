@@ -18,7 +18,7 @@ export function isSupportedProvider(provider: string): provider is SupportedProv
 export type ReasoningEffortFlagOptions = ReasoningEffortExtended | "unspecified" | "disabled"
 
 export type FlagOptions = {
-	prompt?: string
+	print: boolean
 	extension?: string
 	debug: boolean
 	yes: boolean
@@ -27,10 +27,7 @@ export type FlagOptions = {
 	model?: string
 	mode?: string
 	reasoningEffort?: ReasoningEffortFlagOptions
-	exitOnComplete: boolean
-	waitOnComplete: boolean
 	ephemeral: boolean
-	tui: boolean
 }
 
 export enum OnboardingProviderChoice {
@@ -40,7 +37,7 @@ export enum OnboardingProviderChoice {
 
 export interface OnboardingResult {
 	choice: OnboardingProviderChoice
-	authenticated?: boolean
+	token?: string
 	skipped: boolean
 }
 
