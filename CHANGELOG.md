@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.41.3
+
+### Patch Changes
+
+-   - Fix: Thinking block word-breaking to prevent horizontal scroll in the chat UI (PR #10806 by @roomote)
+
 ## [3.41.2] - 2026-01-16
 
 - Add button to open markdown in VSCode preview for easier reading of formatted content (PR #10773 by @brunobergher)
