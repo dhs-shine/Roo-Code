@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.42.0
+
+### Minor Changes
+
+- ![3.42.0 Release - ChatGPT Usage Tracking](/releases/3.42.0-release.png)
+
 ## [3.41.3] - 2026-01-18
 
 - Fix: Thinking block word-breaking to prevent horizontal scroll in the chat UI (PR #10806 by @roomote)
