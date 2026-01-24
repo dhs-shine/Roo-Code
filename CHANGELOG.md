@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.43.0
+
+### Minor Changes
+
+- ![3.43.0 Release - Intelligent Context Condensation](/releases/3.43.0-release.png)
+
 ## [3.42.0] - 2026-01-22
 
 ![3.42.0 Release - ChatGPT Usage Tracking](/releases/3.42.0-release.png)
