@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.44.2
+
+### Patch Changes
+
+-   - Re-enable parallel tool calling with new_task isolation safeguards (PR #11006 by @mrubens)
+
 ## [3.44.1] - 2026-01-27
 
 - Fix LiteLLM tool ID validation errors for Bedrock proxy (PR #10990 by @daniel-lxs)
