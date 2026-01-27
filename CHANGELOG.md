@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.44.0
+
+### Minor Changes
+
+- ![3.44.0 Release - Worktrees](/releases/3.44.0-release.png)
+
 ## [3.43.0] - 2026-01-23
 
 ![3.43.0 Release - Intelligent Context Condensation](/releases/3.43.0-release.png)
