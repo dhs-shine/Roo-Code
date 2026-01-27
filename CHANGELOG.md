@@ -4,7 +4,7 @@
 
 ![3.44.0 Release - Worktrees](/releases/3.44.0-release.png)
 
-- Add worktree selector and creation UX (PR #10940 by @brunobergher)
+- Add worktree selector and creation UX (PR #10940 by @brunobergher, thanks Cline!)
 - Improve subtask visibility and navigation in history and chat views (PR #10864 by @brunobergher)
 - Add wildcard support for MCP alwaysAllow configuration (PR #10948 by @app/roomote)
 - Fix: Prevent nested condensing from including previously-condensed content (PR #10985 by @hannesrudolph)
