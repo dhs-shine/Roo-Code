@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.44.1
+
+### Patch Changes
+
+-   - Fix LiteLLM tool ID validation errors for Bedrock proxy (PR #10990 by @daniel-lxs)
+
 ## [3.44.0] - 2026-01-26
 
 ![3.44.0 Release - Worktrees](/releases/3.44.0-release.png)
