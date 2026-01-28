@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.45.0
+
+### Minor Changes
+
+- ![3.45.0 Release - Smart Code Folding](/releases/3.45.0-release.png)
+
 ## [3.44.2] - 2026-01-27
 
 - Re-enable parallel tool calling with new_task isolation safeguards (PR #11006 by @mrubens)
