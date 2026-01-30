@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.46.0
+
+### Minor Changes
+
+- ![3.46.0 Release - Parallel Processing Power](/releases/3.46.0-release.png)
+
 ## [3.45.0] - 2026-01-27
 
 ![3.45.0 Release - Smart Code Folding](/releases/3.45.0-release.png)
