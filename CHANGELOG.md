@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.46.1
+
+### Patch Changes
+
+-   - Fix: Sanitize tool_use_id in tool_result blocks to match API history, preventing message format errors (PR #11131 by @daniel-lxs)
+
 ## [3.46.0] - 2026-01-27
 
 ![3.46.0 Release - Parallel Processing Power](/releases/3.46.0-release.png)
