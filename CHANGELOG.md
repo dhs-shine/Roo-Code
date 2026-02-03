@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.46.2
+
+### Patch Changes
+
+-   - Fix: IPC improvements for task cancellation and queued message handling (PR #11162 by @cte)
+
 ## [3.46.1] - 2026-01-30
 
 - Fix: Sanitize tool_use_id in tool_result blocks to match API history, preventing message format errors (PR #11131 by @daniel-lxs)
