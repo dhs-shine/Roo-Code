@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.47.0
+
+### Minor Changes
+
+- ![3.47.0 Release - Claude Opus 4.6 & GPT-5.3-Codex](/releases/3.47.0-release.png)
+
 ## [3.46.2] - 2026-02-03
 
 - Fix: Queue messages during command execution instead of losing them (PR #11140 by @mrubens)
