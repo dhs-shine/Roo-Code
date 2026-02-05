@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.47.1
+
+### Patch Changes
+
+-   - Fix: Correct Bedrock model ID for Claude Opus 4.6, resolving model selection issues for Bedrock users (#11231 by @cogwirrel, PR #11232 by @roomote)
+
 ## [3.47.0] - 2026-02-05
 
 ![3.47.0 Release - Claude Opus 4.6 & GPT-5.3-Codex](/releases/3.47.0-release.png)
