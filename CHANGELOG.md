@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.47.3
+
+### Patch Changes
+
+-   - Remove "Enable URL context" and "Enable Grounding with Google search" checkboxes that are no longer needed (PR #11253 by @roomote)
+
 ## [3.47.2] - 2026-02-05
 
 - Add support for .agents/skills directory (PR #11181 by @roomote)
