@@ -1,10 +1,10 @@
 # Roo Code Changelog
 
-## 3.47.2
+## [3.47.2] - 2026-02-05
 
-### Patch Changes
-
--   - Fix: Restore Gemini thought signature round-tripping after AI SDK migration (PR #11237 by @hannesrudolph)
+- Add support for .agents/skills directory (PR #11181 by @roomote)
+- Fix: Restore Gemini thought signature round-tripping after AI SDK migration (PR #11237 by @hannesrudolph)
+- Fix: Capture and round-trip thinking signature for Bedrock Claude (PR #11238 by @hannesrudolph)
 
 ## 3.47.1 - 2026-02-05
 
