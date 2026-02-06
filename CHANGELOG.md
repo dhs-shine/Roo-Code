@@ -1,5 +1,11 @@
 # Roo Code Changelog
 
+## 3.47.2
+
+### Patch Changes
+
+-   - Fix: Restore Gemini thought signature round-tripping after AI SDK migration (PR #11237 by @hannesrudolph)
+
 ## 3.47.1 - 2026-02-05
 
 - Fix: Correct Bedrock model ID for Claude Opus 4.6, resolving model selection issues for Bedrock users (#11231 by @cogwirrel, PR #11232 by @roomote)
