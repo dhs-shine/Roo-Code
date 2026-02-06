@@ -1,10 +1,10 @@
 # Roo Code Changelog
 
-## 3.47.3
+## [3.47.3] - 2026-02-06
 
-### Patch Changes
-
--   - Remove "Enable URL context" and "Enable Grounding with Google search" checkboxes that are no longer needed (PR #11253 by @roomote)
+- Remove "Enable URL context" and "Enable Grounding with Google search" checkboxes that are no longer needed (PR #11253 by @roomote)
+- Revert refactor that appended environment details into existing blocks, restoring original behavior (PR #11256 by @mrubens)
+- Revert removal of stripAppendedEnvironmentDetails and helpers, restoring necessary utility functions (PR #11255 by @mrubens)
 
 ## [3.47.2] - 2026-02-05
 
