@@ -160,6 +160,16 @@ export const OpenAICompatible = ({
 			</Checkbox>
 			<div>
 				<Checkbox
+					checked={apiConfiguration?.openAiDisableNativeTools ?? false}
+					onChange={handleInputChange("openAiDisableNativeTools", noTransform)}>
+					{t("settings:modelInfo.disableNativeTools")}
+				</Checkbox>
+				<div className="text-sm text-vscode-descriptionForeground ml-6">
+					{t("settings:modelInfo.disableNativeToolsDescription")}
+				</div>
+			</div>
+			<div>
+				<Checkbox
 					checked={apiConfiguration?.includeMaxTokens ?? true}
 					onChange={handleInputChange("includeMaxTokens", noTransform)}>
 					{t("settings:includeMaxOutputTokens")}

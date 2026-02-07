@@ -964,6 +964,8 @@
 		"cacheReadsPrice": "Cache reads price",
 		"cacheWritesPrice": "Cache writes price",
 		"enableStreaming": "Enable streaming",
+		"disableNativeTools": "Disable native tool calling",
+		"disableNativeToolsDescription": "Enable this for servers without native tool parsing support (e.g., llama.cpp). The model will use XML-style tool calls instead.",
 		"enableR1Format": "Enable R1 model parameters",
 		"enableR1FormatTips": "Must be enabled when using R1 models such as QWQ to prevent 400 errors",
 		"useAzure": "Use Azure",
